@@ -230,18 +230,246 @@ docker exec -it eduzone_vite npm run dev
 
 ## Konfigurasi Docker
 
-### Container Services
+### Struktur Folder Docker
 
-| Container | Fungsi | Port |
+Semua konfigurasi Docker EduZone terpisah dari source code Laravel dan disimpan di folder infra:
+
+```
+C:\opt\docker\eduzone\
+├── app\                        # PHP-FPM container (main app)
+│   ├── Dockerfile              # Multi-stage build (base/development/production)
+│   ├── docker-compose.yml      # Service: eduzone_app
+│   ├── .env                    # Environment variables container
+│   └── .env.example
+│
+├── nginx\                      # Web server container
+│   ├── docker-compose.yml      # Service: eduzone_nginx (port 8083)
+│   └── default.conf            # Nginx config (proxy ke php-fpm, reverb websocket)
+│
+├── queue\                      # Laravel Horizon (queue worker)
+│   └── docker-compose.yml      # Service: eduzone_queue
+│
+├── scheduler\                  # Laravel Scheduler (cron)
+│   └── docker-compose.yml      # Service: eduzone_scheduler
+│
+└── vite\                       # Vite dev server / asset bundler
+    └── docker-compose.yml      # Service: eduzone_vite (port 5174)
+```
+
+> **Catatan:** `C:\laragon\www\eduzone\docker\` berisi config PHP (php-fpm.conf, php-dev.ini, php-prod.ini) dan Nginx yang di-copy ke dalam container saat build.
+
+---
+
+### Docker Images
+
+Image EduZone tersedia di Docker Hub:
+
+| Image | Docker Hub | Deskripsi |
 |---|---|---|
-| `eduzone_app` | PHP-FPM (Laravel) | 9000 (internal) |
-| `eduzone_nginx` | Web server | 8083 |
-| `eduzone_vite` | Asset bundler | 5174 |
-| `eduzone_queue` | Laravel Horizon — queue worker | — |
-| `eduzone_scheduler` | Laravel Scheduler — cron setiap menit | — |
-| `postgres` | Database (shared) | 5432 |
-| `redis` | Cache/session/queue | 6379 |
-| `reverb` | WebSocket | 8082 |
+| PHP-FPM App | `iswant/eduzone-app:latest` | Image utama Laravel (dipakai oleh app & scheduler) |
+| Queue Worker | `iswant/eduzone-queue:latest` | Image Horizon queue worker |
+
+Pull image:
+```bash
+docker pull iswant/eduzone-app:latest
+docker pull iswant/eduzone-queue:latest
+```
+
+---
+
+### Dockerfile Overview
+
+Dockerfile menggunakan **multi-stage build**:
+
+```
+Stage 1: node-builder    → Build Vite assets (npm run build)
+Stage 2: base            → PHP 8.3-FPM Alpine + extensions
+Stage 3: development     → Composer with dev deps, php-dev.ini
+Stage 4: production      → Composer no-dev, optimized, cache:artisan
+```
+
+PHP Extensions yang diinstall: `pdo_pgsql`, `gd`, `zip`, `mbstring`, `bcmath`, `opcache`, `intl`, `pcntl`, `redis`
+
+---
+
+### Docker Compose Files
+
+#### App (`C:\opt\docker\eduzone\app\docker-compose.yml`)
+
+```yaml
+name: eduzone-app
+
+services:
+  app:
+    build:
+      context: ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}
+      dockerfile: ${DOCKER_INFRA_PATH:-C:/opt/docker/eduzone/app}/Dockerfile
+      target: ${APP_TARGET:-development}
+    container_name: eduzone_app
+    restart: unless-stopped
+    volumes:
+      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html
+      - eduzone_vendor:/var/www/html/vendor
+      - eduzone_node_modules:/var/www/html/node_modules
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+    networks:
+      - network
+```
+
+#### Nginx (`C:\opt\docker\eduzone\nginx\docker-compose.yml`)
+
+```yaml
+name: eduzone-nginx
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: eduzone_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8083}:80"
+    volumes:
+      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html:ro
+      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - network
+```
+
+#### Queue / Horizon (`C:\opt\docker\eduzone\queue\docker-compose.yml`)
+
+```yaml
+name: eduzone-queue
+
+services:
+  queue:
+    build:
+      context: ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}
+      dockerfile: ${DOCKER_INFRA_PATH:-C:/opt/docker/eduzone/app}/Dockerfile
+      target: ${APP_TARGET:-development}
+    container_name: eduzone_queue
+    restart: unless-stopped
+    command: php artisan horizon
+    volumes:
+      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html
+      - eduzone_vendor:/var/www/html/vendor
+    networks:
+      - network
+```
+
+#### Scheduler (`C:\opt\docker\eduzone\scheduler\docker-compose.yml`)
+
+```yaml
+name: eduzone-scheduler
+
+services:
+  scheduler:
+    image: eduzone-app-app
+    container_name: eduzone_scheduler
+    restart: unless-stopped
+    command: >
+      sh -c "while true; do php artisan schedule:run >> /dev/null 2>&1; sleep 60; done"
+    volumes:
+      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html
+      - eduzone_vendor:/var/www/html/vendor
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+    networks:
+      - network
+```
+
+#### Vite (`C:\opt\docker\eduzone\vite\docker-compose.yml`)
+
+```yaml
+name: eduzone-vite
+
+services:
+  vite:
+    image: node:20-alpine
+    container_name: eduzone_vite
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host"
+    ports:
+      - "${VITE_PORT:-5174}:5174"
+    volumes:
+      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/app
+      - /app/node_modules
+    networks:
+      - network
+```
+
+---
+
+### Environment Variables Docker
+
+Setiap folder docker compose mendukung `.env` file. Variabel yang tersedia:
+
+| Variable | Default | Deskripsi |
+|---|---|---|
+| `APP_SOURCE_PATH` | `C:/laragon/www/eduzone` | Path source code Laravel |
+| `DOCKER_INFRA_PATH` | `C:/opt/docker/eduzone/app` | Path folder infra (Dockerfile) |
+| `APP_TARGET` | `development` | Build stage: `development` atau `production` |
+| `APP_ENV` | `local` | Laravel APP_ENV |
+| `APP_DEBUG` | `true` | Laravel APP_DEBUG |
+| `NGINX_PORT` | `8083` | Port nginx di host |
+| `VITE_PORT` | `5174` | Port Vite dev server di host |
+
+---
+
+### Menjalankan Container
+
+```bash
+# App (PHP-FPM)
+docker compose -f C:\opt\docker\eduzone\app\docker-compose.yml up -d
+
+# Nginx
+docker compose -f C:\opt\docker\eduzone\nginx\docker-compose.yml up -d
+
+# Queue (Horizon)
+docker compose -f C:\opt\docker\eduzone\queue\docker-compose.yml up -d
+
+# Scheduler
+docker compose -f C:\opt\docker\eduzone\scheduler\docker-compose.yml up -d
+
+# Vite (dev mode saja)
+docker compose -f C:\opt\docker\eduzone\vite\docker-compose.yml up -d
+```
+
+### Build Ulang Image
+
+```bash
+# Build ulang setelah perubahan Dockerfile
+docker compose -f C:\opt\docker\eduzone\app\docker-compose.yml build --no-cache
+docker compose -f C:\opt\docker\eduzone\app\docker-compose.yml up -d --force-recreate
+```
+
+### Push Image ke Docker Hub
+
+```bash
+docker tag eduzone-app-app iswant/eduzone-app:latest
+docker tag eduzone-queue-queue iswant/eduzone-queue:latest
+docker push iswant/eduzone-app:latest
+docker push iswant/eduzone-queue:latest
+```
+
+---
+
+### Container Services Summary
+
+| Container | Image | Fungsi | Port |
+|---|---|---|---|
+| `eduzone_app` | `iswant/eduzone-app` | PHP-FPM Laravel | 9000 (internal) |
+| `eduzone_nginx` | `nginx:1.27-alpine` | Web server | 8083 |
+| `eduzone_vite` | `node:20-alpine` | Asset bundler (dev) | 5174 |
+| `eduzone_queue` | `iswant/eduzone-queue` | Laravel Horizon | — |
+| `eduzone_scheduler` | `iswant/eduzone-app` | Laravel Scheduler | — |
+| `postgres` | `postgres:16-alpine` | Database (shared infra) | 5432 |
+| `redis` | `redis:7-alpine` | Cache/session/queue (shared infra) | 6379 |
+| `reverb` | `infrastructure-reverb` | WebSocket (shared infra) | 8082 |
+
+---
 
 ### Perintah Docker Umum
 
@@ -249,21 +477,26 @@ docker exec -it eduzone_vite npm run dev
 # Artisan
 docker exec eduzone_app php artisan <command>
 
-# Composer
+# Composer (pakai -u root untuk install package)
 docker exec -u root eduzone_app composer <command>
 
-# Build assets (WAJIB setelah ubah CSS/JS)
+# Build assets production
 docker exec eduzone_vite npm run build
+
+# Dev mode (hot reload)
+docker exec -it eduzone_vite npm run dev
 
 # Masuk ke container
 docker exec -it eduzone_app sh
 
-# Lihat log
+# Lihat log real-time
 docker logs eduzone_app -f
-docker logs eduzone_nginx -f
+docker logs eduzone_queue -f
+docker logs eduzone_scheduler -f
 
 # Restart container
 docker restart eduzone_app
+docker restart eduzone_queue
 ```
 
 ---
