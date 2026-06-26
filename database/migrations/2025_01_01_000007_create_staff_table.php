@@ -12,15 +12,11 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
-            $table->string('full_name');
-            $table->string('nip')->nullable();
+
+            $table->string('full_name'); // tetap plain, perlu searchable/sortable
+            $table->string('nip_hash', 64)->nullable()->index(); // hash untuk lookup, data asli di staff_sensitive_data
+            $table->string('email')->nullable(); // plain - dipakai aktif untuk notifikasi
             $table->string('gender')->nullable(); // L/P
-            $table->string('birth_place')->nullable();
-            $table->date('birth_date')->nullable();
-            $table->string('religion')->nullable();
-            $table->text('address')->nullable();
-            $table->string('phone')->nullable();
-            $table->string('email')->nullable();
             $table->string('position')->nullable();
             $table->date('joined_date')->nullable();
             $table->string('photo')->nullable();

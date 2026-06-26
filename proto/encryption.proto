@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package encryption;
+
+// Service untuk enkripsi data
+service EncryptionService {
+  rpc Encrypt (EncryptRequest) returns (EncryptResponse);
+  rpc Decrypt (DecryptRequest) returns (DecryptResponse);
+}
+
+// Request untuk enkripsi
+message EncryptRequest {
+  string plain_text = 1;
+}
+
+// Respon enkripsi (mengirim ciphertext dan IV untuk dekripsi nanti)
+message EncryptResponse {
+  bytes cipher_text = 1;
+  bytes iv = 2;
+}
+
+// Request untuk dekripsi
+message DecryptRequest {
+  bytes cipher_text = 1;
+  bytes iv = 2;
+}
+
+// Respon dekripsi
+message DecryptResponse {
+  string plain_text = 1;
+}
