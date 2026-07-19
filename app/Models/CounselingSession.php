@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedAttribute;
 use App\Multitenancy\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -30,9 +31,10 @@ class CounselingSession extends Model
 
     protected $casts = [
         'date' => 'date',
+        'topic' => EncryptedAttribute::class,
+        'result' => EncryptedAttribute::class,
     ];
 
-    // Relationships
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'student_id');

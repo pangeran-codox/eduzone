@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedAttribute;
 use App\Multitenancy\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +12,8 @@ class StudentRecord extends Model
 {
     use BelongsToSchool, HasUuids;
 
+    public $timestamps = false; // tabel ini cuma punya created_at (useCurrent)
+
     protected $table = 'student_records';
 
     protected $primaryKey = 'id';
@@ -19,8 +22,6 @@ class StudentRecord extends Model
 
     protected $keyType = 'string';
 
-    public $timestamps = false;
-
     protected $fillable = [
         'school_id',
         'student_id',
@@ -28,21 +29,20 @@ class StudentRecord extends Model
         'date',
         'description',
         'created_by',
-        'created_at',
     ];
 
     protected $casts = [
-        'date'       => 'date',
+        'date' => 'date',
         'created_at' => 'datetime',
+        'description' => EncryptedAttribute::class,
     ];
 
-    // Relationships
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'student_id');
     }
 
-    public function createdBy(): BelongsTo
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }

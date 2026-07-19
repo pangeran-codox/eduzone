@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedAttribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Multitenancy\Models\Tenant;
@@ -56,6 +57,11 @@ class School extends Tenant
         'max_users'          => 'integer',
         'is_active'          => 'boolean',
         'onboarded_at'       => 'datetime',
+
+        // Data sensitif - dienkripsi langsung di kolomnya (1 row per sekolah, tidak butuh tabel terpisah)
+        'principal_nip'       => EncryptedAttribute::class,
+        'bank_account_number' => EncryptedAttribute::class,
+        'bank_account_name'   => EncryptedAttribute::class,
     ];
 
     // ── Relationships ──────────────────────────────────────────

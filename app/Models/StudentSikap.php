@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedAttribute;
 use App\Multitenancy\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -37,11 +38,13 @@ class StudentSikap extends Model
 
     protected $casts = [
         'ketidakhadiran_sakit' => 'integer',
-        'ketidakhadiran_izin'  => 'integer',
-        'ketidakhadiran_alpa'  => 'integer',
+        'ketidakhadiran_izin' => 'integer',
+        'ketidakhadiran_alpa' => 'integer',
+        'catatan_sikap' => EncryptedAttribute::class,
+        'catatan_wakel' => EncryptedAttribute::class,
+        // 'ekskul' SENGAJA TIDAK dienkripsi - cuma daftar nama ekstrakurikuler, bukan data sensitif
     ];
 
-    // Relationships
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'student_id');

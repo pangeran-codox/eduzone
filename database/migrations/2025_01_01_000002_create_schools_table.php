@@ -28,13 +28,13 @@ return new class extends Migration
             $table->string('website')->nullable();
             $table->string('logo')->nullable();
             $table->string('principal_name')->nullable();
-            $table->string('principal_nip')->nullable();
+            $table->text('principal_nip')->nullable(); // text - akan disimpan terenkripsi
             $table->text('vision')->nullable();
             $table->text('mission')->nullable();
             $table->string('motto')->nullable();
             $table->string('bank_name')->nullable();
-            $table->string('bank_account_number')->nullable();
-            $table->string('bank_account_name')->nullable();
+            $table->text('bank_account_number')->nullable(); // text - akan disimpan terenkripsi
+            $table->text('bank_account_name')->nullable(); // text - akan disimpan terenkripsi
             $table->string('subscription_plan')->default('trial'); // trial/basic/pro
             $table->date('subscription_until')->nullable();
             $table->integer('max_users')->default(100);
