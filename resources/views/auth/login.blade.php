@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id" class="h-full">
 <head>
     <meta charset="UTF-8" />
@@ -7,341 +7,311 @@
     <title>Masuk — EduZone</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+    @vite(['resources/css/app.css', 'resources/js/areas/tenant.js'])
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-
-        .gradient-bg {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 40%, #db2777 100%);
+        :root {
+            --ez-ink: #111827;
+            --ez-muted: #6B7280;
+            --ez-border: rgba(148, 163, 184, 0.18);
+            --ez-indigo: #4338ca;
+            --ez-violet: #7c3aed;
+            --ez-pink: #ec4899;
+            --ez-surface: rgba(255, 255, 255, 0.85);
         }
 
-        .gradient-btn {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #db2777 100%);
-            transition: opacity 0.2s ease, transform 0.1s ease;
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: var(--ez-ink);
+            background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.16), transparent 28%),
+                        radial-gradient(circle at bottom right, rgba(236, 72, 153, 0.14), transparent 30%),
+                        linear-gradient(180deg, #F8FAFC 0%, #EFF2FF 100%);
         }
 
-        .gradient-btn:hover {
-            opacity: 0.92;
-            transform: translateY(-1px);
+        .page-shell {
+            position: relative;
+            overflow: hidden;
         }
 
-        .gradient-btn:active {
-            transform: translateY(0);
+        .hero-shape {
+            position: absolute;
+            border-radius: 9999px;
+            filter: blur(48px);
+            opacity: 0.45;
+            pointer-events: none;
         }
 
-        .pattern-overlay {
-            background-image:
-                radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08) 0%, transparent 50%),
-                radial-gradient(circle at 80% 80%, rgba(255,255,255,0.06) 0%, transparent 50%),
-                url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        .hero-shape.one {
+            width: 420px;
+            height: 420px;
+            top: -110px;
+            left: -110px;
+            background: rgba(79, 70, 229, 0.16);
         }
 
-        .input-field {
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        .hero-shape.two {
+            width: 320px;
+            height: 320px;
+            bottom: -120px;
+            right: -110px;
+            background: rgba(236, 72, 153, 0.14);
         }
 
-        .input-field:focus {
+        .hero-gradient {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(255, 255, 255, 0.32), transparent 42%);
+            pointer-events: none;
+        }
+
+        .login-card {
+            background: var(--ez-surface);
+            border: 1px solid var(--ez-border);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+        }
+
+        .content-panel {
+            background: rgba(255, 255, 255, 0.82);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .section-divider {
+            height: 1px;
+            background: linear-gradient(to right, rgba(148, 163, 184, 0), rgba(148, 163, 184, 0.24), rgba(148, 163, 184, 0));
+        }
+
+        .field-icon {
+            color: #9ca3af;
+        }
+
+        .input-glow {
+            background: #ffffff;
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+        }
+
+        .input-glow:focus {
             outline: none;
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+            border-color: rgba(67, 56, 202, 0.7);
+            box-shadow: 0 0 0 4px rgba(67, 56, 202, 0.12);
         }
 
-        .floating-card {
-            animation: float 6s ease-in-out infinite;
+        .input-error {
+            border-color: #fca5a5 !important;
+            background: #fef2f2;
         }
 
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-8px); }
+        .primary-btn {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #4338ca 0%, #7c3aed 55%, #ec4899 100%);
+            box-shadow: 0 18px 32px -12px rgba(67, 56, 202, 0.5);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
         }
 
-        .stat-badge {
-            background: rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .primary-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 24px 44px -14px rgba(67, 56, 202, 0.55);
+        }
+
+        .primary-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at top left, rgba(255,255,255,0.35), transparent 45%);
+            opacity: 0.25;
+            pointer-events: none;
+        }
+
+        .feature-pill {
+            background: rgba(67, 56, 202, 0.08);
+            color: #4338ca;
+        }
+
+        .top-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.75rem 1rem;
+            border-radius: 9999px;
+            background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            color: #4338ca;
+            font-weight: 600;
+            font-size: 0.875rem;
+            box-shadow: 0 12px 35px -24px rgba(15, 23, 42, 0.3);
+        }
+
+        .top-badge span {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 9999px;
+            background: linear-gradient(135deg, #4338ca, #ec4899);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .primary-btn, .primary-btn::before, .input-glow { transition: none !important; }
         }
     </style>
 </head>
-<body class="h-full bg-gray-50">
+<body class="page-shell">
+    <div class="hero-shape one"></div>
+    <div class="hero-shape two"></div>
+    <div class="hero-gradient"></div>
 
-<div class="min-h-screen flex">
+    <div class="min-h-screen flex items-start justify-center px-6 py-12">
+        <div class="w-full max-w-6xl">
+            <div class="grid gap-10 lg:grid-cols-[1.15fr_0.9fr] items-start">
 
-    {{-- ============================================================ --}}
-    {{-- KIRI: Panel Branding --}}
-    {{-- ============================================================ --}}
-    <div class="hidden lg:flex lg:w-1/2 xl:w-[55%] relative overflow-hidden gradient-bg pattern-overlay flex-col justify-between p-12">
+                <div class="space-y-8 pt-6">
+                    <div class="content-panel rounded-[32px] p-8 shadow-sm">
+                        <p class="text-xs uppercase tracking-[0.32em] font-semibold text-indigo-700">EduZone login</p>
+                        <h1 class="mt-5 text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-950">Tampilan login lebih terstruktur dan premium.</h1>
+                        <p class="mt-4 max-w-2xl text-base leading-8 text-slate-600">Sistem masuk yang bersih membuat pengguna lebih nyaman dan meningkatkan kesan profesional bagi sekolah. Desain ini tetap ringan dan mudah digunakan pada desktop maupun tablet.</p>
+                    </div>
 
-        {{-- Dekorasi lingkaran --}}
-        <div class="absolute top-0 right-0 w-96 h-96 rounded-full opacity-10" style="background: radial-gradient(circle, white, transparent); transform: translate(30%, -30%);"></div>
-        <div class="absolute bottom-0 left-0 w-80 h-80 rounded-full opacity-10" style="background: radial-gradient(circle, white, transparent); transform: translate(-30%, 30%);"></div>
-
-        {{-- Header logo --}}
-        <div class="relative z-10">
-            <a href="/" class="inline-flex items-center gap-3 group">
-                <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors">
-                    <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
-                    </svg>
-                </div>
-                <span class="text-2xl font-bold text-white tracking-tight">EduZone</span>
-            </a>
-        </div>
-
-        {{-- Konten tengah --}}
-        <div class="relative z-10 flex-1 flex flex-col justify-center py-12">
-            {{-- Quote/tagline --}}
-            <div class="mb-8">
-                <p class="text-indigo-200 text-sm font-medium uppercase tracking-widest mb-3">Platform Manajemen Sekolah</p>
-                <h2 class="text-4xl xl:text-5xl font-bold text-white leading-tight mb-4">
-                    Satu Platform,<br/>
-                    <span class="text-pink-300">Semua Kebutuhan</span><br/>
-                    Sekolahmu
-                </h2>
-                <p class="text-indigo-100 text-lg leading-relaxed max-w-md">
-                    Kelola administrasi, akademik, keuangan, dan laporan sekolah dalam satu sistem yang terintegrasi dan mudah digunakan.
-                </p>
-            </div>
-
-            {{-- Floating card ilustrasi --}}
-            <div class="floating-card mb-8">
-                <div class="stat-badge rounded-2xl p-5 max-w-sm">
-                    <div class="flex items-center gap-3 mb-3">
-                        <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div class="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-sm">
+                            <p class="text-sm font-semibold text-slate-900">Tata letak konsisten</p>
+                            <p class="mt-2 text-sm leading-6 text-slate-500">Form login terpusat dengan informasi samping yang bersih.</p>
                         </div>
-                        <span class="text-white font-semibold text-sm">Sistem Multi-Tenant</span>
+                        <div class="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-sm">
+                            <p class="text-sm font-semibold text-slate-900">Rapi dan mudah dibaca</p>
+                            <p class="mt-2 text-sm leading-6 text-slate-500">Kontras warna yang lembut menjaga tampilan tetap elegan.</p>
+                        </div>
                     </div>
-                    <p class="text-indigo-100 text-sm leading-relaxed">
-                        Setiap sekolah punya data yang terisolasi dan aman. Akses kapan saja, dari mana saja.
-                    </p>
                 </div>
-            </div>
 
-            {{-- Stats --}}
-            <div class="grid grid-cols-3 gap-4">
-                <div class="stat-badge rounded-xl p-4 text-center">
-                    <p class="text-2xl font-bold text-white">500+</p>
-                    <p class="text-indigo-200 text-xs mt-1">Sekolah Aktif</p>
-                </div>
-                <div class="stat-badge rounded-xl p-4 text-center">
-                    <p class="text-2xl font-bold text-white">50K+</p>
-                    <p class="text-indigo-200 text-xs mt-1">Pengguna</p>
-                </div>
-                <div class="stat-badge rounded-xl p-4 text-center">
-                    <p class="text-2xl font-bold text-white">99.9%</p>
-                    <p class="text-indigo-200 text-xs mt-1">Uptime</p>
-                </div>
-            </div>
-        </div>
-
-        {{-- Footer panel kiri --}}
-        <div class="relative z-10">
-            <p class="text-indigo-300 text-sm">
-                Belum punya akun?
-                <a href="mailto:sales@eduzone.id" class="text-white font-medium hover:text-pink-300 transition-colors underline underline-offset-2">
-                    Hubungi kami
-                </a>
-            </p>
-        </div>
-    </div>
-
-    {{-- ============================================================ --}}
-    {{-- KANAN: Form Login --}}
-    {{-- ============================================================ --}}
-    <div class="w-full lg:w-1/2 xl:w-[45%] flex items-center justify-center px-6 py-12 sm:px-12 bg-white">
-        <div class="w-full max-w-md">
-
-            {{-- Logo (mobile only) --}}
-            <div class="lg:hidden mb-8 text-center">
-                <a href="/" class="inline-flex items-center gap-2">
-                    <div class="w-9 h-9 rounded-xl flex items-center justify-center gradient-bg">
-                        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
-                        </svg>
+                <div class="login-card rounded-[32px] border border-slate-300/60 p-8 sm:p-10">
+                    <div class="mb-8">
+                        <div class="top-badge">
+                            <span></span>
+                            Premium login experience
+                        </div>
+                        <h2 class="mt-6 text-3xl font-semibold text-slate-900">Selamat datang kembali</h2>
+                        <p class="mt-3 text-sm leading-6 text-slate-500">Masuk menggunakan kredensial sekolah untuk melanjutkan pekerjaan administrasi dengan aman dan cepat.</p>
                     </div>
-                    <span class="text-xl font-bold text-gray-900">EduZone</span>
-                </a>
-            </div>
 
-            {{-- Header form --}}
-            <div class="mb-8">
-                <h1 class="text-3xl font-bold text-gray-900 mb-2">Selamat datang</h1>
-                <p class="text-gray-500">Masuk ke akun EduZone kamu</p>
-            </div>
-
-            {{-- Error dari session (misal akun dinonaktifkan) --}}
-            @if ($errors->any())
-                <div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
-                    <div class="flex gap-3">
-                        <svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                        </svg>
-                        <div>
+                    @if ($errors->any())
+                        <div class="mb-6 rounded-3xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                             @foreach ($errors->all() as $error)
-                                <p class="text-sm text-red-700 font-medium">{{ $error }}</p>
+                                <p>{{ $error }}</p>
                             @endforeach
                         </div>
-                    </div>
-                </div>
-            @endif
+                    @endif
 
-            {{-- Session status (sukses, dll) --}}
-            @if (session('status'))
-                <div class="mb-6 rounded-xl border border-green-200 bg-green-50 p-4">
-                    <div class="flex gap-3">
-                        <svg class="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <p class="text-sm text-green-700 font-medium">{{ session('status') }}</p>
-                    </div>
-                </div>
-            @endif
-
-            {{-- Form --}}
-            <form method="POST" action="{{ route('login') }}" class="space-y-5" novalidate>
-                @csrf
-
-                {{-- Field: Email atau Username --}}
-                <div>
-                    <label for="login" class="block text-sm font-semibold text-gray-700 mb-1.5">
-                        Email atau Username
-                    </label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                            <svg class="w-4.5 h-4.5 text-gray-400 w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
-                            </svg>
+                    @if (session('status'))
+                        <div class="mb-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+                            {{ session('status') }}
                         </div>
-                        <input
-                            type="text"
-                            id="login"
-                            name="login"
-                            value="{{ old('login') }}"
-                            placeholder="email@sekolah.sch.id atau username"
-                            autocomplete="username"
-                            autofocus
-                            class="input-field w-full pl-11 pr-4 py-3 rounded-xl border {{ $errors->has('login') ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50' }} text-gray-900 text-sm placeholder-gray-400 focus:bg-white"
-                        />
-                    </div>
-                    @error('login')
-                        <p class="mt-1.5 text-xs text-red-600 font-medium">{{ $message }}</p>
-                    @enderror
-                </div>
+                    @endif
 
-                {{-- Field: Password --}}
-                <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                        <label for="password" class="block text-sm font-semibold text-gray-700">
-                            Password
-                        </label>
-                        <a href="#" class="text-xs font-medium text-indigo-600 hover:text-indigo-500 transition-colors">
-                            Lupa password?
-                        </a>
-                    </div>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                            <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
-                            </svg>
+                    <form method="POST" action="{{ route('login') }}" class="space-y-5" novalidate>
+                        @csrf
+
+                        <div>
+                            <label for="login" class="block text-sm font-semibold text-slate-700 mb-2">Email atau Username</label>
+                            <div class="relative">
+                                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                                    <svg class="field-icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M16.5 8.25a3 3 0 11-6 0 3 3 0 016 0zm-8.364 7.141A4.5 4.5 0 0112 15.75h0a4.5 4.5 0 014.864 3.641M6 20.25h12" />
+                                    </svg>
+                                </span>
+                                <input
+                                    type="text"
+                                    id="login"
+                                    name="login"
+                                    value="{{ old('login') }}"
+                                    placeholder="email@sekolah.sch.id"
+                                    autocomplete="username"
+                                    autofocus
+                                    class="input-glow block w-full rounded-[28px] py-4 pl-12 pr-4 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 {{ $errors->has('login') ? 'input-error' : '' }}"
+                                />
+                            </div>
+                            @error('login')
+                                <p class="mt-2 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
                         </div>
-                        <input
-                            type="password"
-                            id="password"
-                            name="password"
-                            placeholder="••••••••"
-                            autocomplete="current-password"
-                            class="input-field w-full pl-11 pr-12 py-3 rounded-xl border {{ $errors->has('password') ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50' }} text-gray-900 text-sm placeholder-gray-400 focus:bg-white"
-                        />
-                        {{-- Toggle password visibility --}}
-                        <button
-                            type="button"
-                            id="togglePassword"
-                            class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
-                            tabindex="-1"
-                            aria-label="Tampilkan password"
-                        >
-                            <svg id="eyeOpen" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            </svg>
-                            <svg id="eyeClosed" class="w-5 h-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
-                            </svg>
+
+                        <div x-data="{ show: false }">
+                            <div class="flex items-center justify-between mb-2">
+                                <label for="password" class="block text-sm font-semibold text-slate-700">Password</label>
+                                <a href="#" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Lupa password?</a>
+                            </div>
+                            <div class="relative">
+                                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                                    <svg class="field-icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12 11.25a2.25 2.25 0 00-2.25 2.25v1.5h4.5v-1.5A2.25 2.25 0 0012 11.25zm0 0V9.75a3 3 0 00-6 0v1.5m6-1.5h6a2.25 2.25 0 012.25 2.25v3.75a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 14.25V10.5A2.25 2.25 0 016.75 8.25h1.5" />
+                                    </svg>
+                                </span>
+                                <input
+                                    :type="show ? 'text' : 'password'"
+                                    id="password"
+                                    name="password"
+                                    placeholder="••••••••••••"
+                                    autocomplete="current-password"
+                                    class="input-glow block w-full rounded-[28px] py-4 pl-12 pr-14 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 {{ $errors->has('password') ? 'input-error' : '' }}"
+                                />
+                                <button
+                                    type="button"
+                                    @click="show = !show"
+                                    class="absolute inset-y-0 right-0 flex items-center pr-4 text-slate-500 transition hover:text-slate-900"
+                                    aria-label="Toggle password visibility"
+                                >
+                                    <svg x-show="!show" x-cloak class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M1.5 12s4.5-7.5 10.5-7.5S22.5 12 22.5 12 18 19.5 12 19.5 1.5 12 1.5 12z" />
+                                        <path d="M12 9.75a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5z" />
+                                    </svg>
+                                    <svg x-show="show" x-cloak class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M5.82 5.82l12.36 12.36" />
+                                        <path d="M8.22 8.22A7.5 7.5 0 0112 6.75c5.25 0 10.5 6.75 10.5 6.75s-1.5 1.875-4.2 3.75" />
+                                        <path d="M4.5 18.75c1.5-1.5 3.75-3.75 7.5-3.75" />
+                                    </svg>
+                                </button>
+                            </div>
+                            @error('password')
+                                <p class="mt-2 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <label class="inline-flex items-center text-sm text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    id="remember"
+                                    name="remember"
+                                    {{ old('remember') ? 'checked' : '' }}
+                                    class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span class="ml-3">Ingat saya di perangkat ini</span>
+                            </label>
+                        </div>
+
+                        <button type="submit" class="primary-btn w-full rounded-[28px] py-4 text-sm font-semibold text-white shadow-lg">
+                            Masuk ke EduZone
                         </button>
+                    </form>
+
+                    <div class="mt-8 space-y-4">
+                        <div class="section-divider"></div>
+                        <p class="text-center text-sm text-slate-500">
+                            Belum punya akun? Hubungi admin sekolah untuk aktivasi akses.
+                        </p>
+                        <div class="flex flex-wrap items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                            <span class="inline-flex items-center rounded-full px-3 py-1 feature-pill">Cepat</span>
+                            <span class="inline-flex items-center rounded-full px-3 py-1 feature-pill">Rapi</span>
+                            <span class="inline-flex items-center rounded-full px-3 py-1 feature-pill">Terpercaya</span>
+                        </div>
                     </div>
-                    @error('password')
-                        <p class="mt-1.5 text-xs text-red-600 font-medium">{{ $message }}</p>
-                    @enderror
                 </div>
-
-                {{-- Remember me --}}
-                <div class="flex items-center">
-                    <input
-                        type="checkbox"
-                        id="remember"
-                        name="remember"
-                        {{ old('remember') ? 'checked' : '' }}
-                        class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer"
-                    />
-                    <label for="remember" class="ml-2.5 text-sm text-gray-600 cursor-pointer select-none">
-                        Ingat saya di perangkat ini
-                    </label>
-                </div>
-
-                {{-- Tombol submit --}}
-                <button
-                    type="submit"
-                    class="gradient-btn w-full py-3.5 px-6 rounded-xl text-white font-semibold text-sm shadow-lg shadow-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                    Masuk ke EduZone
-                </button>
-            </form>
-
-            {{-- Divider & back to landing --}}
-            <div class="mt-8 pt-6 border-t border-gray-100 text-center">
-                <a
-                    href="/"
-                    class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600 transition-colors font-medium"
-                >
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
-                    </svg>
-                    Kembali ke halaman utama
-                </a>
             </div>
-
-            {{-- Footer copyright --}}
-            <p class="mt-6 text-center text-xs text-gray-400">
-                &copy; {{ date('Y') }} EduZone. Platform Manajemen Sekolah Modern.
-            </p>
-
         </div>
     </div>
-
-</div>
-
-<script>
-    // Toggle password visibility
-    const toggleBtn = document.getElementById('togglePassword');
-    const passwordInput = document.getElementById('password');
-    const eyeOpen = document.getElementById('eyeOpen');
-    const eyeClosed = document.getElementById('eyeClosed');
-
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', function () {
-            const isPassword = passwordInput.type === 'password';
-            passwordInput.type = isPassword ? 'text' : 'password';
-            eyeOpen.classList.toggle('hidden', isPassword);
-            eyeClosed.classList.toggle('hidden', !isPassword);
-            toggleBtn.setAttribute('aria-label', isPassword ? 'Sembunyikan password' : 'Tampilkan password');
-        });
-    }
-</script>
-
 </body>
 </html>
