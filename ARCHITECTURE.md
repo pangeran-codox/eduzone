@@ -134,42 +134,76 @@ Alasan dipisah dari aplikasi utama: memisahkan kunci/logic enkripsi dari codebas
 
 ---
 
-## 5. Rencana Layanan High-Concurrency (Go Fiber)
+## 5. Layanan High-Concurrency (Go Fiber) — Sudah Discaffold
 
-Beberapa endpoint yang butuh concurrency tinggi (contoh yang sudah dibahas: bulk attendance) direncanakan dilayani microservice terpisah berbasis **Go Fiber**, bukan langsung lewat Laravel. Laravel tetap menjadi aplikasi inti (core app, admin, CRUD reguler); Go menangani endpoint yang butuh throughput tinggi. Kedua service ini akan berkomunikasi dengan Rust encryption engine lewat gRPC.
+Beberapa endpoint yang butuh concurrency tinggi (contoh yang sudah dibahas: bulk attendance) dilayani microservice terpisah berbasis **Go Fiber**, bukan langsung lewat Laravel. Laravel tetap menjadi aplikasi inti (core app, admin, CRUD reguler); Go menangani endpoint yang butuh throughput tinggi.
 
-> Catatan: berdasarkan eksplorasi repo saat ini, service Go belum terlihat di dalam zip ini — kemungkinan besar hidup di repo/folder terpisah.
+**Status saat ini:** baru skeleton — `main.go` cuma punya endpoint `/health` dan `/api/v1/ping`, belum ada logic bisnis apapun (belum nyentuh `eduzone_absensi` atau service encryption). Tapi infrastrukturnya sudah jalan: Dockerfile multi-stage (`golang:1.22-alpine` build → `alpine:latest` run, binary statis, non-root user), docker-compose sendiri (`eduzone_go`, port host `3002` → container `3000`), healthcheck aktif.
+
+**Struktur:** `go.mod` bernama `github.com/eduzone/go-service`, pakai Fiber v2.52.5. Ini **repo/folder terpisah dari Laravel** (`go/` — punya `go.mod`, `go.sum`, `main.go` sendiri), bukan bagian dari codebase PHP. Deploy-nya juga independen — punya `docker-compose.yml` sendiri, connect ke network `network` yang sama supaya bisa saling akses dengan `eduzone_app` nanti.
 
 ---
 
 ## 6. Struktur Docker & Deployment
 
-**Prinsip utama:** source code Laravel dan konfigurasi Docker disimpan **terpisah**:
+**Prinsip saat ini:** `Dockerfile` dan `docker-compose.yml` (untuk service `app`, `vite`, `nginx`, `queue`, `scheduler`) **digabung ke dalam repo Laravel ini** — beda dari draf awal yang memisahkannya total ke `C:\opt\docker\eduzone\`. Alasan pindah: perubahan kode sering butuh perubahan Dockerfile/compose barengan (nambah PHP extension, ganti dependency Node, dst), jadi lebih aman satu repo/satu histori git, dan lebih gampang di-debug karena semua file yang relevan ada di satu tempat.
 
 ```
-C:\laragon\www\eduzone\          ← source code Laravel (repo ini)
-C:\opt\docker\eduzone\           ← konfigurasi Docker (Dockerfile, compose)
-├── app\        → Dockerfile (multi-stage) + docker-compose.yml (service: eduzone_app)
-├── nginx\      → docker-compose.yml (service: eduzone_nginx, port 8083)
-├── queue\      → docker-compose.yml (service: eduzone_queue, jalankan Horizon)
-├── scheduler\  → docker-compose.yml (service: eduzone_scheduler, cron loop)
-└── vite\       → docker-compose.yml (service: eduzone_vite, port 5174, dev only)
+C:\laragon\www\eduzone\              ← source code Laravel (repo ini)
+├── Dockerfile                       ← multi-stage: node-builder → base → development/production
+├── docker-compose.yml               ← app, vite, nginx, queue, scheduler — satu file
+├── docker\                          ← config yang di-copy ke image saat build
+│   ├── nginx\default.conf
+│   ├── php\php-dev.ini, php-fpm.conf, php-prod.ini
+│   └── postgres\...
+└── .env                             ← dipakai BARENG oleh Laravel (artisan) & Docker Compose
+                                        (docker compose otomatis baca .env di folder yang sama)
 ```
 
-Folder `docker/` **di dalam** repo Laravel ini (`docker/nginx/default.conf`, `docker/php/*.ini`) berisi config yang di-*copy* ke image saat build — bukan compose file itu sendiri.
+**Yang TETAP terpisah** (infrastruktur shared, dipakai bareng project lain seperti Lab Management):
+```
+C:\opt\docker\infrastructure\
+├── network\     → docker-compose.yml (network bridge lokal) + docker-compose.swarm.yml (overlay, buat Proxmox nanti)
+├── postgres\    → container `postgres`, image postgres:16-alpine, healthcheck aktif
+├── redis\       → container `redis`, image redis:7-alpine, tanpa auth secara default
+├── adminer\     → container `adminer`, GUI database di :8081, default server `postgres`
+├── reverb\      → container `reverb`, WebSocket Laravel Reverb di :8082
+└── (rencana ke depan: nginx-proxy-manager\, crowdsec\, uptime-kuma\)
+```
+
+`docker-compose.yml` di repo EduZone terhubung ke service-service ini lewat Docker network bernama `network` (driver **bridge**, subnet `172.20.0.0/16`) yang didefinisikan `external: true` — network-nya sendiri dibuat oleh compose infrastructure (`network/docker-compose.yml`), bukan oleh compose EduZone, dan harus dibuat **paling pertama** sebelum service lain manapun di-`up`.
+
+> **Bridge vs overlay:** setup saat ini pakai network **bridge** biasa (`docker-compose.yml`), bukan **overlay**. Overlay network cuma berlaku di mode Docker Swarm — folder `network\` sudah menyiapkan `docker-compose.swarm.yml` (driver `overlay`, nama `shared_network`) untuk dipakai nanti saat deploy ke Proxmox pakai Swarm, tapi belum relevan untuk development lokal.
+
+**Kredensial Postgres shared:** satu instance dipakai banyak project — `POSTGRES_USER=laravel`, `POSTGRES_PASSWORD` di-set di `.env` folder infra (default `secret123`, sebaiknya diganti untuk lingkungan yang lebih dari sekadar lokal-dev). Database per-project dibuat otomatis oleh `postgres/init/01-create-databases.sh` saat volume Postgres pertama kali dibuat — daftar saat ini: `lab_management`, `finance`, `eduzone`. **`eduzone_absensi` (§2) belum ada di daftar ini** — perlu ditambahkan manual ke script atau lewat `CREATE DATABASE` manual saat modul Absensi mulai butuh database keduanya.
+
+**Service Go (`eduzone-go-service`)** juga tetap **terpisah** dari repo Laravel ini (lihat §5) — beda bahasa/codebase, siklus deploy independen, tapi tetap nempel ke network `network` yang sama.
 
 **Dockerfile multi-stage:**
 ```
-Stage 1: node-builder    → build asset Vite (npm run build)
+Stage 1: node-builder    → build asset Vite (npm ci --frozen-lockfile && npm run build)
 Stage 2: base            → PHP 8.3-FPM Alpine + extensions
-Stage 3: development     → composer with dev deps + php-dev.ini
-Stage 4: production      → composer --no-dev, cache:artisan, optimized
+Stage 3: development     → composer install (dengan dev deps) + php-dev.ini
+Stage 4: production      → composer install --no-dev, cache:artisan, optimized
 ```
-Extensions: `pdo_pgsql`, `gd`, `zip`, `mbstring`, `bcmath`, `opcache`, `intl`, `pcntl`, `redis`.
+Extensions: `pdo_pgsql`, `pgsql`, `gd`, `zip`, `mbstring`, `bcmath`, `opcache`, `intl`, `pcntl`, `redis`, `grpc`, `protobuf`. User non-root (`laravel`, uid 1000) dipakai di kedua stage.
 
-**Image di Docker Hub:** `iswant/eduzone-app:latest`, `iswant/eduzone-queue:latest`.
+**Service dalam `docker-compose.yml`:**
+| Service | Image/Build | Fungsi |
+|---|---|---|
+| `app` | Build dari `Dockerfile`, tag `eduzone-app:{target}` | PHP-FPM, port internal 9000 |
+| `vite` | `node:20-alpine` | Dev server Vite (`npm install && npm run dev -- --host`), port `5174` |
+| `nginx` | `nginx:1.27-alpine` | Reverse proxy, port host `8083` |
+| `queue` | Image sama dengan `app` (reuse, nggak build ulang) | `php artisan horizon` |
+| `scheduler` | Image sama dengan `app` | Loop `php artisan schedule:run` tiap 60 detik |
 
-**Implikasi penting:** perubahan file di dalam container (`docker exec -it eduzone_app sh` lalu edit langsung) bersifat sementara jika volume tidak di-mount ke source — harus dicommit ke source code dan (untuk perubahan Dockerfile) rebuild image dengan `--no-cache`. Pola ini sama seperti yang berlaku di project Lab Management.
+`queue` dan `scheduler` sengaja **tidak punya `build:` sendiri** — mereka pakai `image: eduzone-app:${APP_TARGET}` yang sama dengan service `app`, supaya nggak build 3x dari Dockerfile yang identik.
+
+**Variable Docker Compose** (`APP_TARGET`, `VITE_PORT`, `NGINX_PORT`) didaftarkan di `.env`/`.env.example` yang sama dengan variable Laravel — satu file, satu sumber kebenaran, karena `docker-compose.yml` sekarang satu folder dengan `.env` itu.
+
+**Implikasi penting:** perubahan file di dalam container (`docker exec -it eduzone_app sh` lalu edit langsung) bersifat sementara — Dockerfile & source sekarang di repo yang sama, jadi alur normalnya edit source → rebuild (`docker compose build app` atau `docker compose up -d --build`), bukan edit langsung di container.
+
+**Gotcha yang pernah kejadian:** container `vite` pakai `npm install` (bukan `npm ci`) secara sengaja — `npm ci` butuh `package-lock.json` sinkron persis dengan `package.json`, dan itu gampang pecah kalau ada yang nambah dependency manual ke `package.json` tanpa regenerate lockfile (pernah bikin container `eduzone_vite` exit code 1). Stage `node-builder` di Dockerfile (buat build production) tetap pakai `npm ci --frozen-lockfile` karena di situ reproducibility lebih penting daripada toleransi.
 
 ---
 
@@ -206,7 +240,6 @@ Route superadmin pakai middleware `superadmin` (`SuperadminOnly`) — redirect k
 
 ## 9. Batasan & Hal yang Belum Terkonfirmasi
 
-- Belum ada Dockerfile/docker-compose.yml di dalam zip yang diunggah — hanya config yang di-copy ke image (nginx conf, php ini). Compose file sesungguhnya hidup di `C:\opt\docker\eduzone\` di luar repo ini.
-- Service Go Fiber dan Rust encryption engine tidak ada di repo ini — didokumentasikan berdasarkan konteks project sebelumnya, perlu diverifikasi lokasi repo-nya.
+- Service Go Fiber sudah discaffold (lihat §5) tapi baru endpoint health-check/ping — belum ada logic bisnis. Rust encryption engine masih belum terlihat di repo manapun yang sudah dibagikan — perlu diverifikasi lokasinya.
 - Baru 6 controller yang benar-benar ada; sebagian besar modul di PRD baru sebatas schema database. **Ini disengaja** — EduZone adalah rebuild dari sistem sekolah single-tenant sebelumnya, dan skema database dirancang menyeluruh di awal sebelum controller/UI per modul mulai dibangun bertahap.
 - Schema `eduzone_absensi` sudah siap (lihat bagian 2), tapi migration Laravel-nya, konfigurasi koneksi database kedua di `config/database.php`, dan controller/route untuk modul Absensi belum digarap di repo ini — jadi urutan kerja modul Absensi kemungkinan besar: setup koneksi DB kedua → migration dari schema ini → model dengan `$connection` eksplisit → job sinkronisasi → controller/route/view.

@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Efek Kembang Api</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #05050a;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .hint {
+    position: fixed;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.45);
+    font-family: sans-serif;
+    font-size: 13px;
+    pointer-events: none;
+    text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<canvas id="fx"></canvas>
+<div class="hint">Klik / sentuh di mana saja untuk meluncurkan kembang api (suara aktif setelah klik pertama) 🔊</div>
+<script>
+const starCanvas = document.getElementById('stars');
+const sctx = starCanvas.getContext('2d');
+const canvas = document.getElementById('fx');
+const ctx = canvas.getContext('2d');
+
+starCanvas.style.position = 'fixed';
+starCanvas.style.top = 0;
+starCanvas.style.left = 0;
+canvas.style.position = 'fixed';
+canvas.style.top = 0;
+canvas.style.left = 0;
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  starCanvas.width = window.innerWidth;
+  starCanvas.height = window.innerHeight;
+  buildStars();
+}
+
+let stars = [];
+function buildStars() {
+  stars = [];
+  const count = Math.floor((canvas.width * canvas.height) / 9000);
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height * 0.75,
+      r: Math.random() * 1.2 + 0.2,
+      tw: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.03 + 0.01
+    });
+  }
+}
+
+function drawStars() {
+  sctx.clearRect(0, 0, starCanvas.width, starCanvas.height);
+  sctx.fillStyle = '#05050a';
+  sctx.fillRect(0, 0, starCanvas.width, starCanvas.height);
+  for (const s of stars) {
+    s.tw += s.speed;
+    const alpha = 0.4 + Math.sin(s.tw) * 0.4;
+    sctx.globalAlpha = Math.max(alpha, 0.05);
+    sctx.fillStyle = '#ffffff';
+    sctx.beginPath();
+    sctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    sctx.fill();
+  }
+  sctx.globalAlpha = 1;
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+// Palet warna umum kembang api
+const colors = [
+  '#ff3b3b', '#ffd23f', '#3fa9ff', '#ff6ec7',
+  '#7cff6e', '#ffffff', '#ff9a3f', '#b26eff', '#3fffe0'
+];
+
+// Palet berlapis merah-kuning-merah (nuansa warna saja, bukan gambar bendera)
+const bandedPalette = ['#c60b1e', '#ffc400', '#c60b1e'];
+
+function rand(min, max) { return Math.random() * (max - min) + min; }
+
+// ================= AUDIO (disintesis langsung, tanpa file eksternal) =================
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playWhoosh() {
+  if (!audioCtx) return;
+  const dur = rand(0.5, 0.9);
+  const bufferSize = audioCtx.sampleRate * dur;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(600, audioCtx.currentTime);
+  filter.frequency.linearRampToValueAtTime(2200, audioCtx.currentTime + dur);
+  filter.Q.value = 0.8;
+
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.18, audioCtx.currentTime + dur * 0.3);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  noise.start();
+  noise.stop(audioCtx.currentTime + dur);
+}
+
+function playBoom(intensity = 1) {
+  if (!audioCtx) return;
+  const dur = rand(0.6, 1.0) * (0.7 + intensity * 0.3);
+  const bufferSize = audioCtx.sampleRate * dur;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+
+  const lowpass = audioCtx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.setValueAtTime(1200 * intensity, audioCtx.currentTime);
+  lowpass.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + dur);
+
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.5 * intensity, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+
+  // sedikit sub-bass untuk dentuman biar terasa berat
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(90 * intensity, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + dur * 0.8);
+  const oscGain = audioCtx.createGain();
+  oscGain.gain.setValueAtTime(0.35 * intensity, audioCtx.currentTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur * 0.8);
+
+  noise.connect(lowpass);
+  lowpass.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.connect(oscGain);
+  oscGain.connect(audioCtx.destination);
+
+  noise.start();
+  noise.stop(audioCtx.currentTime + dur);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur * 0.8);
+}
+
+function playCrackle(count = 6) {
+  if (!audioCtx) return;
+  for (let i = 0; i < count; i++) {
+    const t = audioCtx.currentTime + rand(0.05, 0.5);
+    const dur = rand(0.03, 0.07);
+    const bufferSize = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let j = 0; j < bufferSize; j++) data[j] = (Math.random() * 2 - 1);
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = rand(2500, 5000);
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(rand(0.08, 0.16), t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    noise.start(t);
+    noise.stop(t + dur);
+  }
+}
+// =======================================================================================
+
+let windTime = 0;
+let wind = 0;
+function updateWind() {
+  windTime += 0.003;
+  wind = Math.sin(windTime) * 0.35 + Math.sin(windTime * 2.3) * 0.15;
+}
+
+class Particle {
+  constructor(x, y, color, angle, speed, life, opts = {}) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = life;
+    this.maxLife = life;
+    this.gravity = opts.gravity ?? 0.045;
+    this.size = opts.size ?? rand(1.2, 2.6);
+    this.drag = opts.drag ?? 0.98;
+    this.flicker = opts.flicker ?? false;
+    this.spark = opts.spark ?? false; // partikel willow yang meninggalkan jejak
+    this.trail = [];
+    this.secondary = opts.secondary ?? false; // bisa meledak lagi (crackle)
+    this.crossette = opts.crossette ?? false; // pecah jadi silang khas crossette
+    this.erratic = opts.erratic ?? false; // gerak zig-zag acak seperti "kembang api lebah"
+    this.wobbleSeed = rand(0, Math.PI * 2);
+    this.exploded = false;
+  }
+  update() {
+    if (this.spark) {
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > 6) this.trail.shift();
+    }
+    if (this.erratic) {
+      // arah berubah acak tiap saat, khas efek "dancing bee/crackling spider"
+      this.wobbleSeed += rand(-0.9, 0.9);
+      this.vx += Math.cos(this.wobbleSeed) * 0.5;
+      this.vy += Math.sin(this.wobbleSeed) * 0.5;
+      this.vx = Math.max(-4, Math.min(4, this.vx));
+      this.vy = Math.max(-4, Math.min(4, this.vy));
+    }
+    this.vx *= this.drag;
+    this.vy *= this.drag;
+    this.vy += this.gravity;
+    this.vx += wind * 0.03; // terbawa angin tipis seperti kembang api sungguhan
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= 1;
+
+    if (this.secondary && !this.exploded && this.life < this.maxLife * 0.35 && Math.random() < 0.06) {
+      this.exploded = true;
+    }
+    if (this.crossette && !this.exploded && this.life < this.maxLife * 0.4 && this.life > this.maxLife * 0.35) {
+      this.exploded = true;
+    }
+  }
+  draw() {
+    const lifeRatio = Math.max(this.life / this.maxLife, 0);
+    // kurva pudar lebih alami: tetap terang lalu meredup cepat di akhir, seperti bara api
+    let alpha = Math.pow(lifeRatio, 1.35);
+    if (this.flicker) alpha *= (Math.random() * 0.6 + 0.4);
+
+    if (this.spark && this.trail.length > 1) {
+      for (let i = 0; i < this.trail.length; i++) {
+        const p = this.trail[i];
+        ctx.globalAlpha = (i / this.trail.length) * alpha * 0.5;
+        ctx.beginPath();
+        ctx.fillStyle = this.color;
+        ctx.arc(p.x, p.y, this.size * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.fillStyle = this.color;
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // inti terang di tengah biar lebih bercahaya
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.fillStyle = '#ffffff';
+    ctx.arc(this.x, this.y, this.size * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+class Rocket {
+  constructor(x, targetY, color, big = false) {
+    this.x = x;
+    this.y = canvas.height;
+    this.targetY = targetY;
+    this.vy = -(rand(10, 15)) * (big ? 1.15 : 1);
+    this.vx = rand(-1, 1);
+    this.color = color;
+    this.trail = [];
+    this.exploded = false;
+    this.big = big;
+    this.t = 0;
+    // gaya luncur: lurus, zigzag, atau spiral berputar
+    this.style = big ? 'straight' : ['straight', 'zigzag', 'spiral'][Math.floor(rand(0, 3))];
+    this.wobbleSeed = rand(0, Math.PI * 2);
+  }
+  update() {
+    this.t += 1;
+    this.trail.push({ x: this.x, y: this.y, c: this.color });
+    if (this.trail.length > (this.big ? 18 : 12)) this.trail.shift();
+
+    if (this.style === 'zigzag') {
+      this.vx = Math.sin(this.t * 0.35 + this.wobbleSeed) * 2.2;
+    } else if (this.style === 'spiral') {
+      this.vx = Math.sin(this.t * 0.5 + this.wobbleSeed) * 3.2;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += this.big ? 0.1 : 0.13;
+    if (this.vy >= -1.5 || this.y <= this.targetY) {
+      this.exploded = true;
+    }
+  }
+  draw() {
+    const size = this.big ? 3 : 2;
+    for (let i = 0; i < this.trail.length; i++) {
+      const p = this.trail[i];
+      ctx.globalAlpha = (i / this.trail.length) * 0.7;
+      ctx.beginPath();
+      ctx.fillStyle = p.c;
+      ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.fillStyle = '#ffffff';
+    ctx.arc(this.x, this.y, this.big ? 2.6 : 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+let rockets = [];
+let particles = [];
+let flashes = []; // efek kilatan cahaya saat meledak
+
+// ============ Kembang api yang TIDAK meledak: Fountain & Roman Candle ============
+let fountains = [];
+let romanCandles = [];
+
+function startFountain(x) {
+  fountains.push({
+    x,
+    y: canvas.height - 4,
+    framesLeft: Math.floor(rand(200, 340)),
+    color: pickColor()
+  });
+}
+
+function updateFountains() {
+  fountains.forEach(f => {
+    if (f.framesLeft <= 0) return;
+    f.framesLeft--;
+    const count = 2 + Math.floor(rand(0, 2));
+    for (let i = 0; i < count; i++) {
+      const angle = -Math.PI / 2 + rand(-0.32, 0.32);
+      const speed = rand(3.5, 7.5);
+      const c = Math.random() < 0.35 ? '#ffe9a3' : f.color;
+      particles.push(new Particle(f.x + rand(-4, 4), f.y, c, angle, speed, rand(30, 55), {
+        gravity: 0.14,
+        flicker: true,
+        size: rand(1, 1.8)
+      }));
+    }
+    // percikan halus di titik dasar biar terasa menyala terus
+    if (Math.random() < 0.4) {
+      addFlash(f.x, f.y, f.color);
+    }
+  });
+  fountains = fountains.filter(f => f.framesLeft > 0);
+}
+
+function startRomanCandle(x) {
+  romanCandles.push({
+    x,
+    shotsLeft: Math.floor(rand(4, 7)),
+    cooldown: Math.floor(rand(10, 20)),
+    color: pickColor()
+  });
+}
+
+function updateRomanCandles() {
+  romanCandles.forEach(rc => {
+    if (rc.shotsLeft <= 0) return;
+    rc.cooldown--;
+    if (rc.cooldown <= 0) {
+      rc.shotsLeft--;
+      rc.cooldown = Math.floor(rand(18, 30));
+      const angle = -Math.PI / 2 + rand(-0.08, 0.08);
+      const speed = rand(9, 12);
+      particles.push(new Particle(rc.x, canvas.height - 4, rc.color, angle, speed, rand(55, 78), {
+        gravity: 0.06,
+        drag: 0.995,
+        spark: true,
+        size: rand(1.8, 2.4)
+      }));
+      addFlash(rc.x, canvas.height - 4, rc.color);
+    }
+  });
+  romanCandles = romanCandles.filter(rc => rc.shotsLeft > 0);
+}
+
+function maybeStartGroundEffects() {
+  if (fountains.length === 0 && Math.random() < 0.0025) {
+    startFountain(rand(canvas.width * 0.15, canvas.width * 0.85));
+  }
+  if (romanCandles.length < 2 && Math.random() < 0.0035) {
+    startRomanCandle(rand(canvas.width * 0.1, canvas.width * 0.9));
+  }
+}
+// ===================================================================================
+
+
+function addFlash(x, y, color) {
+  flashes.push({ x, y, r: 4, maxR: rand(60, 110), alpha: 0.55, color });
+}
+
+function explodeBig(x, y, baseColor) {
+  // === FINALE: ledakan besar multi-lapis, jarang muncul ===
+  addFlash(x, y, baseColor);
+  addFlash(x, y, '#ffffff');
+  playBoom(1.6);
+  playCrackle(10);
+
+  const layers = 3;
+  for (let l = 0; l < layers; l++) {
+    const count = 90 + l * 20;
+    const speedBase = 3 + l * 2.6;
+    const color = l === 1 ? '#ffffff' : baseColor;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.03, 0.03);
+      const speed = speedBase + rand(-0.5, 1.2);
+      particles.push(new Particle(x, y, color, angle, speed, rand(70, 110), {
+        gravity: 0.045,
+        size: rand(1.5, 3)
+      }));
+    }
+  }
+  // percikan crackle menyebar
+  for (let i = 0; i < 70; i++) {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(1, 5);
+    particles.push(new Particle(x, y, '#ffe9a3', angle, speed, rand(30, 60), {
+      flicker: true,
+      size: rand(0.8, 1.6)
+    }));
+  }
+  // gelombang kejut cincin tipis melebar
+  for (let i = 0; i < 140; i++) {
+    const angle = (Math.PI * 2 * i) / 140;
+    particles.push(new Particle(x, y, '#ffffff', angle, rand(7, 8), rand(20, 30), {
+      gravity: 0.02,
+      size: 1
+    }));
+  }
+}
+
+function explode(x, y, baseColor) {
+  const type = Math.random();
+  addFlash(x, y, baseColor);
+  playBoom(rand(0.5, 0.85));
+
+  if (type < 0.11) {
+    // === Ring: cincin tipis yang melebar cepat ===
+    const count = 110;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      particles.push(new Particle(x, y, baseColor, angle, rand(5.5, 6.5), rand(45, 60), {
+        gravity: 0.03,
+        size: rand(1, 1.8)
+      }));
+    }
+  } else if (type < 0.22) {
+    // === Palm: batang tebal jatuh seperti daun palem, berujung percikan ===
+    const count = 24;
+    for (let i = 0; i < count; i++) {
+      const angle = rand(Math.PI * 1.1, Math.PI * 1.9); // condong ke bawah
+      const speed = rand(4, 7);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(70, 100), {
+        gravity: 0.12,
+        drag: 0.985,
+        spark: true,
+        size: rand(1.8, 2.6),
+        secondary: true
+      }));
+    }
+  } else if (type < 0.33) {
+    // === Peony: ledakan bulat klasik, padat ===
+    const count = 90 + Math.floor(rand(0, 40));
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+      const speed = rand(2.5, 6.5);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(45, 75), {
+        gravity: 0.05
+      }));
+    }
+  } else if (type < 0.44) {
+    // === Willow: jejak panjang jatuh melengkung ke bawah ===
+    const count = 70 + Math.floor(rand(0, 30));
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.08, 0.08);
+      const speed = rand(2, 4.5);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(70, 110), {
+        gravity: 0.09,
+        drag: 0.99,
+        spark: true,
+        size: rand(1, 1.8)
+      }));
+    }
+  } else if (type < 0.55) {
+    // === Crackle / glitter: ledakan kecil yang memercik lagi ===
+    playCrackle(8);
+    const count = 60 + Math.floor(rand(0, 30));
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.1, 0.1);
+      const speed = rand(2, 5.5);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(35, 55), {
+        flicker: true,
+        gravity: 0.04
+      }));
+    }
+    // percikan emas kecil di sekitarnya
+    for (let i = 0; i < 40; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(0.5, 3);
+      particles.push(new Particle(x, y, '#ffe9a3', angle, speed, rand(20, 40), {
+        flicker: true,
+        size: rand(0.8, 1.4)
+      }));
+    }
+  } else if (type < 0.63) {
+    // === Chrysanthemum: dua lapis kecepatan, lebih besar & mekar ===
+    const countOuter = 70;
+    const countInner = 50;
+    for (let i = 0; i < countOuter; i++) {
+      const angle = (Math.PI * 2 * i) / countOuter;
+      particles.push(new Particle(x, y, baseColor, angle, rand(5, 7.5), rand(60, 90), {
+        gravity: 0.05
+      }));
+    }
+    for (let i = 0; i < countInner; i++) {
+      const angle = (Math.PI * 2 * i) / countInner + 0.15;
+      particles.push(new Particle(x, y, '#ffffff', angle, rand(2, 4), rand(40, 60), {
+        gravity: 0.05,
+        size: rand(0.8, 1.4)
+      }));
+    }
+  } else if (type < 0.71) {
+    // === Ledakan bercincin warna merah-kuning-merah ===
+    const count = 100;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+      const speed = rand(2, 6.5);
+      const ringIndex = Math.floor((speed - 2) / (4.5 / bandedPalette.length));
+      const c = bandedPalette[Math.min(ringIndex, bandedPalette.length - 1)];
+      particles.push(new Particle(x, y, c, angle, speed, rand(50, 80), {
+        gravity: 0.05
+      }));
+    }
+  } else if (type < 0.8) {
+    // === Comet / Waterfall: ledakan condong satu arah, seperti air terjun cahaya ===
+    const dir = rand(0, Math.PI * 2);
+    const count = 90;
+    for (let i = 0; i < count; i++) {
+      const spread = rand(-0.55, 0.55);
+      const angle = dir + spread;
+      const speed = rand(3, 7) * (1 - Math.abs(spread) / 1.2);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(55, 90), {
+        gravity: 0.07,
+        drag: 0.99,
+        spark: true,
+        size: rand(1.2, 2)
+      }));
+    }
+  } else if (type < 0.87) {
+    // === Salute: dentuman besar, kilatan sangat terang, partikel sedikit tapi cepat ===
+    playBoom(1.3);
+    addFlash(x, y, '#ffffff');
+    const count = 35;
+    for (let i = 0; i < count; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(4, 9);
+      particles.push(new Particle(x, y, '#ffffff', angle, speed, rand(20, 35), {
+        flicker: true,
+        gravity: 0.03,
+        size: rand(1, 1.8)
+      }));
+    }
+  } else if (type < 0.93) {
+    // === Strobe: kedap-kedip terang-gelap, khas kembang api "strobe kamuro" ===
+    const count = 70;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+      const speed = rand(2, 5);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(60, 90), {
+        gravity: 0.045,
+        flicker: true,
+        size: rand(1.3, 2)
+      }));
+    }
+  } else if (type < 0.97) {
+    // === Bee / Dancing sparks: percikan terbang liar zig-zag, khas "crackling bee" ===
+    const count = 55;
+    for (let i = 0; i < count; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(1.5, 3.5);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(50, 80), {
+        gravity: 0.02,
+        drag: 0.985,
+        erratic: true,
+        size: rand(1, 1.6)
+      }));
+    }
+  } else {
+    // === Crossette: bintang yang pecah lagi jadi bentuk silang di udara ===
+    const count = 16;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      const speed = rand(3.5, 5);
+      particles.push(new Particle(x, y, baseColor, angle, speed, rand(45, 55), {
+        gravity: 0.05,
+        crossette: true
+      }));
+    }
+  }
+
+  // sedikit kilau putih tambahan di hampir semua ledakan biar lebih hidup
+  if (Math.random() < 0.7) {
+    for (let i = 0; i < 18; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(0.5, 2.2);
+      particles.push(new Particle(x, y, '#ffffff', angle, speed, rand(30, 55), {
+        flicker: true,
+        size: rand(0.6, 1.2)
+      }));
+    }
+  }
+}
+
+function pickColor() {
+  return Math.random() < 0.15
+    ? bandedPalette[Math.floor(Math.random() * bandedPalette.length)]
+    : colors[Math.floor(Math.random() * colors.length)];
+}
+
+function triggerBreaks(r) {
+  // Menentukan berapa kali shell ini "pecah" — kebanyakan cuma sekali,
+  // tapi sebagian (mirip shell multi-break asli) pecah 2-3 kali berurutan.
+  const roll = Math.random();
+  let breaks = 1;
+  if (roll > 0.93) breaks = 3;
+  else if (roll > 0.7) breaks = 2;
+
+  const doBreak = r.big ? explodeBig : explode;
+  let bx = r.x;
+  let by = r.y;
+  let vx = r.vx * 0.5;
+  let vy = Math.min(r.vy, -1.5); // sisa momentum ke atas sebelum pecah
+
+  for (let i = 0; i < breaks; i++) {
+    const delay = i === 0 ? 0 : rand(90, 220);
+    setTimeout(() => {
+      doBreak(bx, by, r.color);
+    }, delay);
+    // shell yang belum pecah terus melaju sedikit sebelum pecahan berikutnya,
+    // sehingga tiap ledakan sedikit bergeser posisi—persis shell multi-break asli.
+    bx += vx * 3 + rand(-8, 8);
+    by += vy * 3;
+    vy += 1.2; // gravitasi mulai menarik turun antar pecahan
+  }
+}
+
+function launchFirework(x, big = false) {
+  const targetY = big
+    ? rand(canvas.height * 0.08, canvas.height * 0.22)
+    : rand(canvas.height * 0.08, canvas.height * 0.45);
+  rockets.push(new Rocket(x, targetY, pickColor(), big));
+  playWhoosh();
+}
+
+function launchFinale() {
+  // ledakan besar, jarang muncul, kadang lebih dari satu berdekatan
+  const n = Math.random() < 0.35 ? 2 : 1;
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => {
+      launchFirework(rand(canvas.width * 0.25, canvas.width * 0.75), true);
+    }, i * 260);
+  }
+}
+
+function launchBurstWave() {
+  // beberapa roket sekaligus, jarak antar peluncuran sedikit acak
+  const n = Math.floor(rand(2, 5));
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => {
+      launchFirework(rand(canvas.width * 0.1, canvas.width * 0.9));
+    }, i * rand(60, 160));
+  }
+}
+
+function launchBarrage() {
+  // rentetan panjang beruntun, seperti puncak pertunjukan kembang api asli
+  const n = Math.floor(rand(5, 10));
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => {
+      launchFirework(rand(canvas.width * 0.05, canvas.width * 0.95));
+    }, i * rand(70, 150));
+  }
+}
+
+// ==== Ritme pertunjukan: bergantian antara jeda sepi, tembakan satu-satu,
+// dan rentetan beruntun — semua durasinya acak biar terasa seperti pertunjukan nyata ====
+let showPhase = 'lull'; // 'lull' (sepi) -> 'single' (satu-satu) -> 'barrage' (beruntun)
+let phaseTimer = 0;
+
+function pickPhaseDuration(phase) {
+  if (phase === 'lull') return rand(90, 220);     // jeda sepi ±1.5-3.6 detik
+  if (phase === 'single') return rand(150, 320);  // tembakan satu-satu ±2.5-5.3 detik
+  return rand(70, 160);                            // rentetan beruntun ±1.2-2.6 detik
+}
+
+function nextPhase(current) {
+  // urutan realistis: sepi -> satu-satu -> (kadang beruntun) -> sepi lagi
+  if (current === 'lull') return 'single';
+  if (current === 'single') return Math.random() < 0.55 ? 'barrage' : 'lull';
+  return 'lull';
+}
+
+phaseTimer = pickPhaseDuration(showPhase);
+
+function updateShowPhase() {
+  phaseTimer -= 1;
+  if (phaseTimer <= 0) {
+    showPhase = nextPhase(showPhase);
+    phaseTimer = pickPhaseDuration(showPhase);
+    if (showPhase === 'barrage') {
+      launchBarrage();
+    }
+  }
+}
+
+function autoLaunch() {
+  if (showPhase === 'lull') {
+    // hampir tidak ada peluncuran, sesekali satu roket kesasar biar tidak kosong total
+    if (Math.random() < 0.004) {
+      launchFirework(rand(0, canvas.width));
+    }
+  } else if (showPhase === 'single') {
+    // satu-satu dengan jeda jelas antar tembakan
+    if (Math.random() < 0.022) {
+      launchFirework(rand(0, canvas.width));
+    }
+  } else {
+    // barrage: sudah dipicu lewat launchBarrage(), tapi tetap ada tambahan acak
+    if (Math.random() < 0.06) {
+      launchFirework(rand(0, canvas.width));
+    }
+  }
+}
+
+function pointerLaunch(x) {
+  launchFirework(x);
+  if (Math.random() < 0.5) {
+    setTimeout(() => launchFirework(x + rand(-40, 40)), rand(60, 140));
+  }
+}
+
+canvas.addEventListener('click', (e) => {
+  ensureAudio();
+  pointerLaunch(e.clientX);
+});
+canvas.addEventListener('touchstart', (e) => {
+  ensureAudio();
+  for (const t of e.touches) pointerLaunch(t.clientX);
+}, { passive: true });
+
+// aktifkan audio juga lewat interaksi pertama apa pun (keyboard, dsb)
+window.addEventListener('pointerdown', ensureAudio, { once: true });
+
+function loop() {
+  drawStars();
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(5, 5, 10, 0.22)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  autoLaunch();
+  updateWind();
+  updateShowPhase();
+  updateFountains();
+  updateRomanCandles();
+  maybeStartGroundEffects();
+
+  rockets.forEach(r => { r.update(); r.draw(); });
+  rockets = rockets.filter(r => {
+    if (r.exploded) {
+      triggerBreaks(r);
+      return false;
+    }
+    return true;
+  });
+
+  // kilatan cahaya pusat ledakan
+  flashes.forEach(f => {
+    f.r += (f.maxR - f.r) * 0.25;
+    f.alpha *= 0.85;
+    const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r);
+    grad.addColorStop(0, f.color + 'cc');
+    grad.addColorStop(1, f.color + '00');
+    ctx.globalAlpha = f.alpha;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  flashes = flashes.filter(f => f.alpha > 0.02);
+
+  const spawned = [];
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+    if (p.exploded) spawned.push(p);
+  });
+  particles = particles.filter(p => p.life > 0 && !p.exploded);
+
+  // crackle / crossette: ledakan kedua kecil dari partikel tipe secondary
+  spawned.forEach(p => {
+    if (p.crossette) {
+      // === Crossette: pecah jadi 4 arah membentuk silang, khas kembang api asli ===
+      const baseAngle = rand(0, Math.PI * 2);
+      for (let i = 0; i < 4; i++) {
+        const angle = baseAngle + (Math.PI / 2) * i;
+        particles.push(new Particle(p.x, p.y, p.color, angle, rand(1.5, 2.5), rand(20, 32), {
+          size: rand(0.9, 1.4),
+          gravity: 0.04
+        }));
+      }
+    } else {
+      const count = 8 + Math.floor(rand(0, 6));
+      for (let i = 0; i < count; i++) {
+        const angle = rand(0, Math.PI * 2);
+        const speed = rand(0.8, 2.5);
+        particles.push(new Particle(p.x, p.y, '#ffe9a3', angle, speed, rand(15, 25), {
+          flicker: true,
+          size: rand(0.6, 1)
+        }));
+      }
+    }
+  });
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(loop);
+}
+
+loop();
+
+// beberapa peluncuran awal biar layar langsung ramai saat dibuka
+setTimeout(() => launchBurstWave(), 300);
+setTimeout(() => launchBurstWave(), 900);
+setTimeout(() => launchBurstWave(), 1600);
+
+// finale besar muncul jarang, dengan jeda acak antar kemunculan
+function scheduleFinale() {
+  const delay = rand(9000, 16000); // sekitar 9-16 detik sekali
+  setTimeout(() => {
+    launchFinale();
+    scheduleFinale();
+  }, delay);
+}
+scheduleFinale();
+</script>
+</body>
+</html>

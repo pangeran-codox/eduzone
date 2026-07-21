@@ -188,10 +188,177 @@ eduzone/
 
 ## Setup & Instalasi
 
-### Prasyarat
+### 0. Setup Infrastructure Shared (sekali di awal, sebelum project apapun)
+
+EduZone **tidak** punya Postgres/Redis/Reverb sendiri — semuanya numpang ke stack
+infrastructure shared yang dipakai bareng project lain (Lab Management, dll), hidup terpisah
+di `C:\opt\docker\infrastructure\`. Kalau infra ini belum pernah di-setup di komputer kamu,
+lakukan langkah-langkah berikut **sekali saja** (bukan tiap kali buka project EduZone).
+
+> **Soal "overlay network":** overlay network itu fitur khusus Docker **Swarm**, nggak jalan di
+> `docker compose` biasa. Karena setup kamu sekarang masih lokal (bukan Swarm — itu baru
+> dipakai nanti pas deploy ke Proxmox), yang dipakai di sini adalah network **bridge** biasa.
+> Folder infra kamu sebenarnya sudah punya dua versi tiap service: `docker-compose.yml`
+> (bridge, buat lokal — dipakai di tutorial ini) dan `docker-compose.swarm.yml` (overlay,
+> disiapkan buat nanti). Jangan pakai file `.swarm.yml` sebelum benar-benar jalanin
+> `docker swarm init` di server tujuan.
+
+**a. Extract infra ke lokasi permanen:**
+
+```bash
+# Sesuaikan lokasi tujuan kalau mau beda
+xcopy /E /I infra C:\opt\docker\infrastructure
+cd C:\opt\docker\infrastructure
+```
+
+**b. Buat network `network` dulu — WAJIB paling pertama**, karena semua service lain
+(postgres, redis, adminer, reverb, dan nanti EduZone sendiri) referensi network ini sebagai
+`external: true`. Kalau network ini belum ada, semua compose lain bakal gagal start dengan
+error `network network declared as external, but could not be found`:
+
+```bash
+docker network create --driver bridge --subnet 172.20.0.0/16 network
+```
+
+> **Kenapa bukan `docker compose up -d` di folder `network/`?** File `network/docker-compose.yml`
+> isinya cuma definisi `networks:` tanpa `services:` — `docker compose up` butuh minimal satu
+> service buat dijalankan, jadi kalau dipaksa akan gagal dengan error `no service selected`.
+> Untuk network-only compose file kayak gini, langsung pakai `docker network create` dengan
+> spesifikasi yang sama (nama, driver, subnet) persis seperti yang tertulis di file itu.
+
+Verifikasi network sudah dibuat:
+```bash
+docker network ls | findstr network
+```
+Harus muncul network bernama `network` dengan driver `bridge`.
+
+**c. Copy `.env` di tiap folder service** (kalau belum ada — beberapa folder di zip infra ini
+sudah menyertakan `.env` terisi, tapi kalau kamu clone ulang dari `.env.example`, isi dulu):
+
+```bash
+copy postgres\.env.example postgres\.env
+copy redis\.env.example redis\.env
+copy adminer\.env.example adminer\.env
+```
+
+**d. Nyalakan Postgres, Redis, Adminer** (urutan antar ketiganya nggak masalah, yang penting
+network sudah ada dari langkah b):
+
+```bash
+cd postgres
+docker compose up -d
+cd ..
+
+cd redis
+docker compose up -d
+cd ..
+
+cd adminer
+docker compose up -d
+cd ..
+```
+
+> **Reverb belum dinyalakan di sini, sengaja.** Reverb butuh volume `eduzone_vendor` (isi
+> `vendor/` Laravel EduZone) supaya `php artisan reverb:start` bisa jalan — lihat
+> `reverb/.env`, ada `VENDOR_VOLUME=eduzone_vendor` yang dirujuk sebagai `external: true` di
+> `reverb/docker-compose.yml`. Volume itu **baru ada setelah EduZone sendiri di-build**
+> (langkah §1 di bawah), jadi Reverb harus dinyalakan **paling terakhir**, setelah setup
+> EduZone selesai — bukan bareng Postgres/Redis/Adminer di sini. Kalau dipaksa duluan, akan
+> muncul error `service "reverb" refers to undefined volume eduzone_vendor: invalid compose
+> project`.
+
+**e. Verifikasi Postgres, Redis, Adminer jalan:**
+```bash
+docker ps --filter "name=postgres" --filter "name=redis" --filter "name=adminer"
+```
+Keempatnya harus berstatus `Up` (Postgres & Redis malah ada `healthcheck`, jadi statusnya bisa
+`Up (healthy)`).
+
+**Kredensial default yang perlu kamu ingat** (dari `.env` infra, dipakai lagi nanti di `.env`
+project EduZone):
+
+| Variable | Nilai default di infra |
+|---|---|
+| `POSTGRES_USER` | `laravel` |
+| `POSTGRES_PASSWORD` | `secret123` *(ganti kalau kamu sudah ubah di `.env` infra)* |
+| `REDIS_PASSWORD` | *(kosong/tanpa auth secara default)* |
+
+> Database `eduzone` **sudah otomatis dibuat** oleh `postgres/init/01-create-databases.sh`
+> (daftarnya: `lab_management`, `finance`, `eduzone`) — tapi script init Postgres **cuma jalan
+> sekali, saat volume `postgres_data` masih kosong/baru pertama kali dibuat**. Kalau kamu sudah
+> pernah jalanin Postgres ini sebelum `eduzone` ditambahkan ke daftar, database-nya nggak akan
+> otomatis muncul — buat manual:
+> ```bash
+> docker exec -it postgres psql -U laravel -c "CREATE DATABASE eduzone;"
+> ```
+> Catatan buat nanti: kalau modul Absensi mulai digarap dan butuh database
+> `eduzone_absensi` (lihat `ARCHITECTURE.md` §2), nama itu **belum** ada di daftar
+> `01-create-databases.sh` — perlu ditambahkan manual dengan cara yang sama.
+
+**Adminer** (GUI buat lihat isi database) bisa diakses di `http://localhost:8081` (port dari
+`ADMINER_PORT`), server default sudah diarahkan ke `postgres`.
+
+---
+
+### Reset Total (hapus semua container + data, mulai dari nol)
+
+Kalau butuh reset bersih — baik infra maupun EduZone — urutannya kebalikan dari setup: matikan
+EduZone dulu, baru infra, baru network.
+
+```bash
+# 1. EduZone: matikan + hapus volume (vendor, node_modules)
+cd C:\laragon\www\eduzone
+docker compose down -v
+
+# 2. Infra: matikan + hapus volume data (postgres_data, redis_data)
+cd C:\opt\docker\infrastructure
+
+cd postgres
+docker compose down -v
+cd ..
+
+cd redis
+docker compose down -v
+cd ..
+
+cd adminer
+docker compose down -v
+cd ..
+
+cd reverb
+docker compose down -v
+cd ..
+
+# 3. Network: TIDAK dibuat via compose (lihat catatan di atas), jadi dihapus
+#    juga bukan via `docker compose down` — pakai docker network rm langsung
+docker network rm network
+```
+
+Verifikasi semua benar-benar bersih:
+```bash
+docker ps -a --filter "name=eduzone"
+docker ps -a --filter "name=postgres"
+docker ps -a --filter "name=redis"
+docker ps -a --filter "name=adminer"
+docker ps -a --filter "name=reverb"
+docker network ls | findstr network
+docker volume ls
+```
+Semua hasil di atas idealnya kosong. Setelah bersih, ulangi dari langkah **a** di atas
+(`docker network create ...`) untuk build dari awal lagi.
+
+---
+
+### 1. Prasyarat Project EduZone
 
 - Docker Desktop
 - Git
+- Infrastructure shared sudah jalan (langkah 0 di atas) — cek lagi kalau perlu:
+  ```bash
+  docker network ls | findstr network
+  docker ps --filter "name=postgres"
+  docker ps --filter "name=redis"
+  ```
 
 ### Langkah Instalasi
 
@@ -202,28 +369,109 @@ cd eduzone
 
 # 2. Copy environment file
 cp .env.example .env
-
-# 3. Install dependencies via container
-docker exec eduzone_app composer install
-docker exec eduzone_vite npm install
-
-# 4. Generate app key
-docker exec eduzone_app php artisan key:generate
-
-# 5. Jalankan migration
-docker exec eduzone_app php artisan migrate
-
-# 6. Jalankan seeder
-docker exec eduzone_app php artisan db:seed
-
-# 7. Build assets
-docker exec eduzone_vite npm run build
 ```
+
+**3. Sesuaikan `.env` — bagian ini paling sering salah, baca baik-baik:**
+
+Postgres dan Redis di project ini **bukan container khusus EduZone** — itu instance shared
+yang dipakai bareng banyak project (lihat `docker/postgres/init-multiple-db.sh`: satu instance
+Postgres, banyak database dibuatkan otomatis lewat `POSTGRES_MULTIPLE_DATABASES`). Konsekuensinya:
+
+- **`DB_USERNAME` dan `DB_PASSWORD` di `.env` EduZone WAJIB SAMA PERSIS** dengan
+  `POSTGRES_USER` / `POSTGRES_PASSWORD` yang didefinisikan di `.env` folder infra Postgres
+  (`C:\opt\docker\infrastructure\postgres\.env` atau sejenisnya). Ini **satu user Postgres
+  untuk semua database** — bukan user terpisah per project. Salah isi password di sini bukan
+  error "wrong database", tapi gagal autentikasi total (`password authentication failed for
+  user`).
+- **`DB_DATABASE`** harus salah satu nama yang sudah didaftarkan di `POSTGRES_MULTIPLE_DATABASES`
+  punya infra (mis. `eduzone`). Kalau nama database ini belum ada di daftar itu, tambahkan dulu
+  di `.env` infra Postgres lalu `docker compose down && docker compose up -d` ulang container
+  Postgres-nya (script `init-multiple-db.sh` cuma jalan sekali saat volume Postgres kosong/baru).
+- **`DB_HOST`** diisi nama *service* Postgres di docker-compose infra (biasanya `postgres`),
+  **bukan** `127.0.0.1` atau `localhost` — karena EduZone jalan di container terpisah yang
+  connect lewat Docker network, bukan dari host langsung.
+- **`REDIS_HOST`** sama logikanya: nama service Redis di infra (biasanya `redis`), bukan
+  `127.0.0.1`.
+- **`REDIS_PASSWORD`**: kalau Redis di infra kamu diaktifkan `requirepass`-nya, isi persis sama
+  dengan itu. Kalau Redis-nya jalan tanpa auth (umum untuk internal-only), biarkan
+  `REDIS_PASSWORD=null` — jangan diisi string kosong, itu beda arti buat Laravel.
+
+Contoh potongan `.env` yang benar, sesuai infra yang sudah kamu setup di langkah 0
+(kalau kamu ganti `POSTGRES_PASSWORD` di `.env` infra dari default, sesuaikan juga di sini):
+
+```env
+DB_CONNECTION=pgsql
+DB_HOST=postgres
+DB_PORT=5432
+DB_DATABASE=eduzone
+DB_USERNAME=laravel
+DB_PASSWORD=secret123
+
+REDIS_CLIENT=phpredis
+REDIS_HOST=redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+```
+
+> `.env.example` bawaan project ini masih pakai default skeleton Laravel (`DB_CONNECTION=sqlite`,
+> `REDIS_HOST=127.0.0.1`) — itu **harus diubah manual** seperti contoh di atas. Kalau nanti kamu
+> ganti kredensial di `.env` infra (`C:\opt\docker\infrastructure\postgres\.env` dan
+> `redis\.env`), nilai di sini harus ikut disesuaikan juga — dua-duanya harus selalu cocok.
+
+**4. Build & jalankan semua container:**
+
+```bash
+docker compose up -d --build
+```
+
+Ini otomatis menjalankan lima service sekaligus: `app`, `vite`, `nginx`, `queue`, `scheduler`
+(lihat `docker-compose.yml` di root project). Tunggu sampai build selesai (build pertama kali
+paling lama, karena narik base image + install PHP extensions + composer + npm).
+
+Cek semua container jalan:
+```bash
+docker ps --filter "name=eduzone"
+```
+Kelimanya harus berstatus `Up`. Kalau ada yang `Exited`, cek dulu `docker logs <nama_container>`
+sebelum lanjut ke langkah berikutnya.
+
+**4b. Sekarang baru nyalakan Reverb** (yang sengaja dilewat di langkah infra tadi — lihat
+catatan di §0d). Volume `eduzone_vendor` sudah ada sekarang karena `app` baru selesai di-build:
+
+```bash
+cd C:\opt\docker\infrastructure\reverb
+docker compose up -d
+cd C:\laragon\www\eduzone
+
+docker ps --filter "name=reverb"
+```
+
+**5. Setup aplikasi (generate key, migration, seeder):**
+
+```bash
+docker exec eduzone_app php artisan key:generate
+docker exec eduzone_app php artisan migrate
+docker exec eduzone_app php artisan db:seed
+```
+
+**6. Selesai.** Buka domain yang sudah kamu arahkan ke Nginx Proxy Manager / port `8083`
+(default `NGINX_PORT`).
 
 ### Development Mode (Hot Reload)
 
+Nggak perlu langkah manual tambahan — service `vite` di `docker-compose.yml` sudah otomatis
+menjalankan `npm install && npm run dev -- --host` begitu container start. Edit file di
+`resources/js` atau `resources/css`, otomatis reload di browser.
+
+Kalau mau lihat log dev server-nya:
 ```bash
-docker exec -it eduzone_vite npm run dev
+docker logs eduzone_vite -f
+```
+
+Build production (dipakai kalau `APP_TARGET=production`, atau mau generate `public/build`
+manual):
+```bash
+docker exec eduzone_vite npm run build
 ```
 
 ---
@@ -232,48 +480,34 @@ docker exec -it eduzone_vite npm run dev
 
 ### Struktur Folder Docker
 
-Semua konfigurasi Docker EduZone terpisah dari source code Laravel dan disimpan di folder infra:
+`Dockerfile` dan `docker-compose.yml` ada di **root project ini** (satu repo dengan source
+code Laravel) — bukan terpisah di folder infra lain:
 
 ```
-C:\opt\docker\eduzone\
-├── app\                        # PHP-FPM container (main app)
-│   ├── Dockerfile              # Multi-stage build (base/development/production)
-│   ├── docker-compose.yml      # Service: eduzone_app
-│   ├── .env                    # Environment variables container
-│   └── .env.example
-│
-├── nginx\                      # Web server container
-│   ├── docker-compose.yml      # Service: eduzone_nginx (port 8083)
-│   └── default.conf            # Nginx config (proxy ke php-fpm, reverb websocket)
-│
-├── queue\                      # Laravel Horizon (queue worker)
-│   └── docker-compose.yml      # Service: eduzone_queue
-│
-├── scheduler\                  # Laravel Scheduler (cron)
-│   └── docker-compose.yml      # Service: eduzone_scheduler
-│
-└── vite\                       # Vite dev server / asset bundler
-    └── docker-compose.yml      # Service: eduzone_vite (port 5174)
+C:\laragon\www\eduzone\
+├── Dockerfile                       # Multi-stage: node-builder → base → development/production
+├── docker-compose.yml               # Semua service: app, vite, nginx, queue, scheduler
+├── docker\                          # Config yang di-copy ke image saat build
+│   ├── nginx\default.conf
+│   ├── php\php-dev.ini, php-fpm.conf, php-prod.ini
+│   └── postgres\init-multiple-db.sh, database-config-snippet.php
+└── .env                              # Dipakai BARENG oleh Laravel & Docker Compose
+                                         (docker compose otomatis baca .env di folder yang sama)
 ```
 
-> **Catatan:** `C:\laragon\www\eduzone\docker\` berisi config PHP (php-fpm.conf, php-dev.ini, php-prod.ini) dan Nginx yang di-copy ke dalam container saat build.
+Yang **tetap terpisah** (infrastructure shared, dipakai bareng project lain):
 
----
-
-### Docker Images
-
-Image EduZone tersedia di Docker Hub:
-
-| Image | Docker Hub | Deskripsi |
-|---|---|---|
-| PHP-FPM App | `iswant/eduzone-app:latest` | Image utama Laravel (dipakai oleh app & scheduler) |
-| Queue Worker | `iswant/eduzone-queue:latest` | Image Horizon queue worker |
-
-Pull image:
-```bash
-docker pull iswant/eduzone-app:latest
-docker pull iswant/eduzone-queue:latest
 ```
+C:\opt\docker\infrastructure\
+├── postgres\   ├── redis\   ├── reverb\   ├── nginx-proxy-manager\   └── ...
+```
+
+`docker-compose.yml` EduZone terhubung ke service-service ini lewat Docker network bernama
+`network`, didefinisikan `external: true` — network-nya sendiri dibuat oleh compose infra,
+bukan oleh compose EduZone. Makanya infra **wajib** jalan lebih dulu (lihat Prasyarat di atas).
+
+Service Go Fiber (`go/` — lihat `ARCHITECTURE.md`) juga tetap project/repo terpisah, connect
+ke network `network` yang sama.
 
 ---
 
@@ -282,198 +516,71 @@ docker pull iswant/eduzone-queue:latest
 Dockerfile menggunakan **multi-stage build**:
 
 ```
-Stage 1: node-builder    → Build Vite assets (npm run build)
+Stage 1: node-builder    → Build Vite assets (npm ci --frozen-lockfile && npm run build)
 Stage 2: base            → PHP 8.3-FPM Alpine + extensions
 Stage 3: development     → Composer with dev deps, php-dev.ini
 Stage 4: production      → Composer no-dev, optimized, cache:artisan
 ```
 
-PHP Extensions yang diinstall: `pdo_pgsql`, `gd`, `zip`, `mbstring`, `bcmath`, `opcache`, `intl`, `pcntl`, `redis`
+PHP Extensions yang diinstall: `pdo_pgsql`, `pgsql`, `gd`, `zip`, `mbstring`, `bcmath`,
+`opcache`, `intl`, `pcntl`, `redis`, `grpc`, `protobuf`
 
 ---
 
-### Docker Compose Files
+### Service dalam `docker-compose.yml`
 
-#### App (`C:\opt\docker\eduzone\app\docker-compose.yml`)
+| Service | Container | Image/Build | Fungsi | Port host |
+|---|---|---|---|---|
+| `app` | `eduzone_app` | Build dari `Dockerfile`, tag `eduzone-app:{target}` | PHP-FPM | 9000 (internal) |
+| `vite` | `eduzone_vite` | `node:20-alpine` | Dev server Vite, hot reload | `5174` |
+| `nginx` | `eduzone_nginx` | `nginx:1.27-alpine` | Reverse proxy ke php-fpm | `8083` |
+| `queue` | `eduzone_queue` | Image sama dengan `app` (reuse) | `php artisan horizon` | — |
+| `scheduler` | `eduzone_scheduler` | Image sama dengan `app` (reuse) | Loop `schedule:run` tiap 60 detik | — |
 
-```yaml
-name: eduzone-app
+`queue` dan `scheduler` sengaja **tidak** punya `build:` sendiri — mereka pakai
+`image: eduzone-app:${APP_TARGET}` yang sama dengan service `app`, supaya nggak build 3x dari
+Dockerfile yang identik. Konsekuensinya: kalau cuma jalanin `docker compose up -d queue` tanpa
+`app` pernah di-build duluan, image-nya belum ada — jalankan `docker compose up -d` (semua
+service) atau minimal `docker compose up -d app` dulu.
 
-services:
-  app:
-    build:
-      context: ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}
-      dockerfile: ${DOCKER_INFRA_PATH:-C:/opt/docker/eduzone/app}/Dockerfile
-      target: ${APP_TARGET:-development}
-    container_name: eduzone_app
-    restart: unless-stopped
-    volumes:
-      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html
-      - eduzone_vendor:/var/www/html/vendor
-      - eduzone_node_modules:/var/www/html/node_modules
-    environment:
-      APP_ENV: ${APP_ENV:-local}
-      APP_DEBUG: ${APP_DEBUG:-true}
-    networks:
-      - network
-```
+Infra shared yang dipakai bareng (bukan bagian compose file ini):
 
-#### Nginx (`C:\opt\docker\eduzone\nginx\docker-compose.yml`)
-
-```yaml
-name: eduzone-nginx
-
-services:
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: eduzone_nginx
-    restart: unless-stopped
-    ports:
-      - "${NGINX_PORT:-8083}:80"
-    volumes:
-      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html:ro
-      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - network
-```
-
-#### Queue / Horizon (`C:\opt\docker\eduzone\queue\docker-compose.yml`)
-
-```yaml
-name: eduzone-queue
-
-services:
-  queue:
-    build:
-      context: ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}
-      dockerfile: ${DOCKER_INFRA_PATH:-C:/opt/docker/eduzone/app}/Dockerfile
-      target: ${APP_TARGET:-development}
-    container_name: eduzone_queue
-    restart: unless-stopped
-    command: php artisan horizon
-    volumes:
-      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html
-      - eduzone_vendor:/var/www/html/vendor
-    networks:
-      - network
-```
-
-#### Scheduler (`C:\opt\docker\eduzone\scheduler\docker-compose.yml`)
-
-```yaml
-name: eduzone-scheduler
-
-services:
-  scheduler:
-    image: eduzone-app-app
-    container_name: eduzone_scheduler
-    restart: unless-stopped
-    command: >
-      sh -c "while true; do php artisan schedule:run >> /dev/null 2>&1; sleep 60; done"
-    volumes:
-      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/var/www/html
-      - eduzone_vendor:/var/www/html/vendor
-    environment:
-      APP_ENV: ${APP_ENV:-local}
-      APP_DEBUG: ${APP_DEBUG:-true}
-    networks:
-      - network
-```
-
-#### Vite (`C:\opt\docker\eduzone\vite\docker-compose.yml`)
-
-```yaml
-name: eduzone-vite
-
-services:
-  vite:
-    image: node:20-alpine
-    container_name: eduzone_vite
-    working_dir: /app
-    command: sh -c "npm ci && npm run dev -- --host"
-    ports:
-      - "${VITE_PORT:-5174}:5174"
-    volumes:
-      - ${APP_SOURCE_PATH:-C:/laragon/www/eduzone}:/app
-      - /app/node_modules
-    networks:
-      - network
-```
+| Container | Image | Fungsi |
+|---|---|---|
+| `postgres` | `postgres:16-alpine` | Database (shared, banyak project) |
+| `redis` | `redis:7-alpine` | Cache/session/queue (shared) |
+| `reverb` | custom | WebSocket (shared) |
 
 ---
 
 ### Environment Variables Docker
 
-Setiap folder docker compose mendukung `.env` file. Variabel yang tersedia:
+Variable ini didaftarkan di `.env`/`.env.example` yang sama dengan variable Laravel (satu
+sumber kebenaran, karena `docker-compose.yml` sekarang satu folder dengan `.env`):
 
 | Variable | Default | Deskripsi |
 |---|---|---|
-| `APP_SOURCE_PATH` | `C:/laragon/www/eduzone` | Path source code Laravel |
-| `DOCKER_INFRA_PATH` | `C:/opt/docker/eduzone/app` | Path folder infra (Dockerfile) |
 | `APP_TARGET` | `development` | Build stage: `development` atau `production` |
-| `APP_ENV` | `local` | Laravel APP_ENV |
-| `APP_DEBUG` | `true` | Laravel APP_DEBUG |
+| `APP_ENV` | `local` | Laravel `APP_ENV`, dipakai juga oleh compose |
+| `APP_DEBUG` | `true` | Laravel `APP_DEBUG`, dipakai juga oleh compose |
 | `NGINX_PORT` | `8083` | Port nginx di host |
 | `VITE_PORT` | `5174` | Port Vite dev server di host |
-
----
-
-### Menjalankan Container
-
-```bash
-# App (PHP-FPM)
-docker compose -f C:\opt\docker\eduzone\app\docker-compose.yml up -d
-
-# Nginx
-docker compose -f C:\opt\docker\eduzone\nginx\docker-compose.yml up -d
-
-# Queue (Horizon)
-docker compose -f C:\opt\docker\eduzone\queue\docker-compose.yml up -d
-
-# Scheduler
-docker compose -f C:\opt\docker\eduzone\scheduler\docker-compose.yml up -d
-
-# Vite (dev mode saja)
-docker compose -f C:\opt\docker\eduzone\vite\docker-compose.yml up -d
-```
-
-### Build Ulang Image
-
-```bash
-# Build ulang setelah perubahan Dockerfile
-docker compose -f C:\opt\docker\eduzone\app\docker-compose.yml build --no-cache
-docker compose -f C:\opt\docker\eduzone\app\docker-compose.yml up -d --force-recreate
-```
-
-### Push Image ke Docker Hub
-
-```bash
-docker tag eduzone-app-app iswant/eduzone-app:latest
-docker tag eduzone-queue-queue iswant/eduzone-queue:latest
-docker push iswant/eduzone-app:latest
-docker push iswant/eduzone-queue:latest
-```
-
----
-
-### Container Services Summary
-
-| Container | Image | Fungsi | Port |
-|---|---|---|---|
-| `eduzone_app` | `iswant/eduzone-app` | PHP-FPM Laravel | 9000 (internal) |
-| `eduzone_nginx` | `nginx:1.27-alpine` | Web server | 8083 |
-| `eduzone_vite` | `node:20-alpine` | Asset bundler (dev) | 5174 |
-| `eduzone_queue` | `iswant/eduzone-queue` | Laravel Horizon | — |
-| `eduzone_scheduler` | `iswant/eduzone-app` | Laravel Scheduler | — |
-| `postgres` | `postgres:16-alpine` | Database (shared infra) | 5432 |
-| `redis` | `redis:7-alpine` | Cache/session/queue (shared infra) | 6379 |
-| `reverb` | `infrastructure-reverb` | WebSocket (shared infra) | 8082 |
 
 ---
 
 ### Perintah Docker Umum
 
 ```bash
+# Nyalakan semua service
+docker compose up -d
+
+# Build ulang setelah perubahan Dockerfile/dependency
+docker compose up -d --build
+
+# Build ulang total tanpa cache (kalau --build biasa masih pakai layer lama)
+docker compose build --no-cache
+docker compose up -d --force-recreate
+
 # Artisan
 docker exec eduzone_app php artisan <command>
 
@@ -483,24 +590,26 @@ docker exec -u root eduzone_app composer <command>
 # Build assets production
 docker exec eduzone_vite npm run build
 
-# Dev mode (hot reload)
-docker exec -it eduzone_vite npm run dev
-
 # Masuk ke container
 docker exec -it eduzone_app sh
 
 # Lihat log real-time
 docker logs eduzone_app -f
+docker logs eduzone_vite -f
 docker logs eduzone_queue -f
 docker logs eduzone_scheduler -f
 
-# Restart container
+# Restart satu service
 docker restart eduzone_app
-docker restart eduzone_queue
+
+# Matikan semua service (tanpa hapus volume)
+docker compose down
+
+# Matikan dan hapus volume juga (HATI-HATI: data vendor/node_modules ke-reset)
+docker compose down -v
 ```
 
 ---
-
 ## Database & Migrasi
 
 ### Konvensi Database
