@@ -59,31 +59,6 @@ services:
       - network
 
   # ============================================================
-  # Reverb — WebSocket server (broadcasting)
-  # ============================================================
-  reverb:
-    image: eduzone-app:${APP_TARGET:-development}
-    container_name: eduzone_reverb
-    restart: unless-stopped
-    depends_on:
-      - app
-    command: >
-      php artisan reverb:start
-      --host=0.0.0.0
-      --port=${REVERB_PORT:-8082}
-      --no-interaction
-    volumes:
-      - .:/var/www/html
-      - eduzone_vendor:/var/www/html/vendor
-    ports:
-      - "${REVERB_PORT:-8082}:${REVERB_PORT:-8082}"
-    environment:
-      APP_ENV: ${APP_ENV:-local}
-      APP_DEBUG: ${APP_DEBUG:-true}
-    networks:
-      - network
-
-  # ============================================================
   # Queue worker — Laravel Horizon
   # ============================================================
   queue:
@@ -116,6 +91,36 @@ services:
     volumes:
       - .:/var/www/html
       - eduzone_vendor:/var/www/html/vendor
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+    networks:
+      - network
+
+  # ============================================================
+  # Reverb — WebSocket server (dulunya di infrastructure shared,
+  # dipindah ke sini karena Reverb terikat ke SATU instalasi Laravel
+  # spesifik, beda dari Postgres/Redis yang genuinely multi-tenant)
+  # ============================================================
+  reverb:
+    build:
+      context: ./docker/reverb
+      dockerfile: Dockerfile
+    image: eduzone-reverb:latest
+    container_name: reverb
+    restart: unless-stopped
+    command: >
+      php artisan reverb:start
+      --host=0.0.0.0
+      --port=${REVERB_PORT:-8082}
+      --no-interaction
+    volumes:
+      - .:/var/www/html:ro
+      - eduzone_vendor:/var/www/html/vendor:ro
+    ports:
+      - "${REVERB_PORT:-8082}:${REVERB_PORT:-8082}"
+    depends_on:
+      - app
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}

@@ -1,5 +1,4 @@
 import '../bootstrap';
-import '../bootstrap';
 import '../alpine';
 
 // Taruh JS spesifik area superadmin di sini (mis. logic sidebar, chart Horizon/Telescope

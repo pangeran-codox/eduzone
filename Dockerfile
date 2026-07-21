@@ -45,9 +45,12 @@ RUN docker-php-ext-configure gd --with-jpeg --with-webp \
         intl \
         pcntl
 
-# Install Redis extension
+# Install Redis, gRPC, Protobuf extension
 # Gabungkan instalasi semua extension dalam satu blok RUN
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+# linux-headers WAJIB ada — tanpa ini, grpc gagal compile di Alpine dengan
+# error "fatal error: linux/unistd.h: No such file or directory" (abseil-cpp,
+# dependency bawaan grpc, butuh header ini yang nggak ada default di musl libc).
+RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS linux-headers \
     && pecl install redis grpc protobuf \
     && docker-php-ext-enable redis grpc protobuf \
     && apk del .build-deps
