@@ -45,14 +45,21 @@ RUN docker-php-ext-configure gd --with-jpeg --with-webp \
         intl \
         pcntl
 
-# Install Redis, gRPC, Protobuf extension
+# Install Redis extension
 # Gabungkan instalasi semua extension dalam satu blok RUN
-# linux-headers WAJIB ada — tanpa ini, grpc gagal compile di Alpine dengan
-# error "fatal error: linux/unistd.h: No such file or directory" (abseil-cpp,
-# dependency bawaan grpc, butuh header ini yang nggak ada default di musl libc).
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS linux-headers \
-    && pecl install redis grpc protobuf \
-    && docker-php-ext-enable redis grpc protobuf \
+#
+# ⚠️ grpc & protobuf SENGAJA DITUNDA (bukan dihapus permanen) — belum ada
+# controller yang makai encryption service, dan compile grpc dari source di
+# Alpine makan waktu ~1 jam + rawan masalah cache. Begitu mulai kerjain
+# integrasi encryption service (lihat ARCHITECTURE.md §4), aktifkan lagi:
+# 1. tambahkan "grpc protobuf" balik ke baris pecl install & ext-enable di bawah
+# 2. pastikan "linux-headers" ditambahkan lagi ke .build-deps (wajib buat grpc di Alpine)
+# 3. HAPUS "--ignore-platform-req=ext-grpc" dari kedua baris "composer install"
+#    di bawah (development & production stage) — itu cuma buat bypass sementara
+#    karena composer.json minta package grpc/grpc yang butuh ext-grpc aktif.
+RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
     && apk del .build-deps
 # Install Composer
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
@@ -73,7 +80,7 @@ COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
 # Install composer deps (with dev)
 COPY --chown=laravel:laravel composer.json composer.lock ./
-RUN composer install --no-scripts --no-autoloader --prefer-dist
+RUN composer install --no-scripts --no-autoloader --prefer-dist --ignore-platform-req=ext-grpc
 
 # Copy app
 COPY --chown=laravel:laravel . .
@@ -81,7 +88,20 @@ COPY --chown=laravel:laravel . .
 # Copy built assets from node stage
 COPY --from=node-builder --chown=laravel:laravel /app/public/build ./public/build
 
-RUN composer dump-autoload --optimize
+# ⚠️ DEBUG SEMENTARA — dipecah 2 langkah biar bisa diagnosa
+# Langkah 1: dump-autoload TANPA trigger script (--no-scripts), biar nggak
+# langsung mati kena package:discover. Ini generate vendor/autoload.php dkk
+# tanpa Laravel ikut boot.
+RUN composer dump-autoload --no-scripts
+
+# Langkah 2: inspeksi hasil autoload_psr4.php buat namespace Telescope,
+# dan test class_exists() langsung pakai autoloader yang baru dibikin.
+RUN echo "=== Isi vendor/laravel/telescope/composer.json (autoload) ===" \
+    && grep -A15 '"autoload"' vendor/laravel/telescope/composer.json \
+    && echo "=== Cari 'Telescope' di autoload_psr4.php ===" \
+    && grep -i "telescope" vendor/composer/autoload_psr4.php || echo "TIDAK ADA entry Telescope di autoload_psr4.php!" \
+    && echo "=== Test class_exists langsung ===" \
+    && php -r "require 'vendor/autoload.php'; var_dump(class_exists('Laravel\\\\Telescope\\\\TelescopeApplicationServiceProvider'));"
 
 # Storage & cache permissions
 RUN mkdir -p storage/logs storage/framework/{cache,sessions,views,testing} bootstrap/cache \
@@ -104,7 +124,7 @@ COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
 # Install composer deps (no dev)
 COPY --chown=laravel:laravel composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --optimize-autoloader
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --optimize-autoloader --ignore-platform-req=ext-grpc
 
 # Copy app
 COPY --chown=laravel:laravel . .

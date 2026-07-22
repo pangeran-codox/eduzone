@@ -91,6 +91,21 @@ Entry point JS/CSS di-organize **per area**, bukan satu bundle global atau per-m
 - Entry `kiosk.js` (layar RFID/QR/Face) sengaja **tidak** load Alpine — device fisik nyala berjam-jam, dijaga seringan mungkin.
 - Detail lengkap & alasan tiap keputusan ada di `FRONTEND.md`.
 
+## gRPC & Encryption Service — Sementara Dinonaktifkan di Dockerfile
+
+Extension PHP `grpc`/`protobuf` **sengaja dikomentar/dilepas** dari `Dockerfile` (cuma `redis`
+yang aktif) — compile `grpc` dari source di Alpine makan waktu ~1 jam dan belum ada controller
+yang benar-benar makai `EncryptionGrpcService`/`grpc_worker.php`. `composer install` juga
+dikasih `--ignore-platform-req=ext-grpc` biar nggak nolak gara-gara package `grpc/grpc` di
+`composer.json` minta ekstensi itu aktif.
+
+**Jangan coba pakai `EncryptionGrpcService` atau apapun yang butuh `ext-grpc` sebelum ini
+diaktifkan lagi** — bakal fatal error class/extension not found. Kalau mulai kerjain integrasi
+encryption service, aktifkan lagi sesuai instruksi komentar di `Dockerfile` (tambah `grpc
+protobuf` balik ke `pecl install`, tambah `linux-headers` ke `.build-deps`, hapus
+`--ignore-platform-req=ext-grpc`), lalu siap-siap nunggu compile ~1 jam sekali itu doang (abis
+itu ke-cache normal).
+
 ## Debug & Observability (khusus superadmin)
 
 - `/horizon` — monitor queue/job (role `superadmin` saja)
