@@ -6,7 +6,9 @@
         "dev": "vite"
     },
     "dependencies": {
-        "alpinejs": "^3.14.1"
+        "alpinejs": "^3.14.1",
+        "laravel-echo": "^1.16.1",
+        "pusher-js": "^8.4.0"
     },
     "devDependencies": {
         "autoprefixer": "^10.4.20",
