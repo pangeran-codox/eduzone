@@ -8,7 +8,7 @@ Dokumen ini merangkum arsitektur teknis EduZone secara lebih dalam dari PRD, dit
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  Docker Environment                 │
+│         Docker Environment (compose EduZone)        │
 │                                                       │
 │  ┌──────────┐   ┌──────────┐   ┌──────────────┐     │
 │  │  nginx   │   │   app    │   │    vite      │     │
@@ -16,22 +16,27 @@ Dokumen ini merangkum arsitektur teknis EduZone secara lebih dalam dari PRD, dit
 │  └──────────┘   │  :9000   │   └──────────────┘     │
 │                 └────┬─────┘                         │
 │  ┌──────────┐        │        ┌──────────────┐       │
-│  │ postgres │◀───────┤        │    redis     │       │
-│  │  :5432   │        │        │    :6379     │       │
+│  │  reverb  │        │        │    queue     │       │
+│  │  :8082   │        │        │  (Horizon)   │       │
 │  └──────────┘        │        └──────────────┘       │
-│                      │                                │
-│  ┌──────────┐         └──────▶ ┌──────────────┐      │
-│  │  reverb  │                  │    queue     │      │
-│  │  :8082   │                  │  (Horizon)   │      │
-│  └──────────┘                  └──────────────┘      │
-│                                                       │
-│  ── Infrastructure (shared, di luar project ini) ──  │
-│  nginx-proxy-manager (:80/:443) · adminer (:8081)    │
-│  uptime-kuma (:3001) · crowdsec                      │
-└─────────────────────────────────────────────────────┘
+│  ┌──────────┐        │                               │
+│  │scheduler │        │                               │
+│  └──────────┘        │                               │
+└───────────────────────┼───────────────────────────────┘
+                        │
+┌───────────────────────┼───────────────────────────────┐
+│  Infrastructure (shared, compose terpisah di           │
+│  C:\opt\docker\infrastructure\)                        │
+│  ┌──────────┐  ┌──────────────┐                        │
+│  │ postgres │  │    redis     │                        │
+│  │  :5432   │  │    :6379     │                        │
+│  └──────────┘  └──────────────┘                        │
+│  nginx-proxy-manager (:80/:443) · adminer (:8081)      │
+│  uptime-kuma (:3001) · crowdsec                        │
+└─────────────────────────────────────────────────────────┘
 ```
 
-Postgres, Redis, dan Reverb adalah service **shared infrastructure** — dipakai bersama oleh project lain (mis. Lab Management), bukan didedikasikan untuk EduZone saja.
+**Reverb TIDAK lagi shared infrastructure** — sempat di situ, tapi sudah dipindah ke compose EduZone sendiri (`docker-compose.yml` root project, service `reverb`, build dari `./docker/reverb`). Alasannya (persis sesuai komentar di compose-nya): Reverb terikat ke **satu instalasi Laravel spesifik** (App key, broadcast config, dst — nggak genuinely multi-tenant lintas project), beda dari Postgres/Redis yang memang dipakai bersama banyak project (EduZone, Lab Management, dll) dan cocok tetap di infrastructure shared. Cuma **Postgres dan Redis** yang masih benar-benar shared infrastructure sekarang.
 
 ---
 
@@ -83,10 +88,48 @@ Tabel lapisan keamanan lanjutan (belum aktif): `device_keys`, `qr_tokens`, `atte
 ### 2.4 Implikasi Teknis
 
 - Query yang butuh gabungan data Absensi dengan data di database utama (mis. nama siswa lengkap dari `students`) tidak bisa pakai join SQL lintas database — pakai data dari `people_ref` (cache lokal) atau join di level aplikasi.
-- Koneksi database kedua ini perlu didaftarkan sebagai `connection` terpisah di `config/database.php` Laravel; model-model modul Absensi perlu eksplisit set `$connection` ke koneksi tersebut.
-- `attendance_events` bersifat insert-only — jangan buat endpoint yang meng-UPDATE atau DELETE baris di tabel ini secara langsung. Rencana ke depan bahkan ada `REVOKE UPDATE, DELETE` di level database role setelah alur insert-only teruji.
+- Koneksi database kedua **sudah dikonfigurasi** sebagai connection `pgsql_absensi` di `config/database.php` (env `DB_ABSENSI_*`). Semua model modul Absensi eksplisit set `protected $connection = 'pgsql_absensi';` — lihat §2.5 untuk detail implementasi.
+- `attendance_events` bersifat insert-only — jangan buat endpoint yang meng-UPDATE atau DELETE baris di tabel ini secara langsung. **Sudah di-enforce di level model** (`App\Models\Absensi\AttendanceEvent` melempar `RuntimeException` kalau ada yang coba `update()`/`delete()`) sebagai lapisan pertama, sebelum nanti ditambah `REVOKE UPDATE, DELETE` di level database role kalau alur insert-only sudah teruji lebih jauh.
 - Koreksi data absensi (mis. wali kelas mengubah status siswa) di versi awal masih langsung/manual; alur approval via `attendance_correction_log` baru diaktifkan belakangan — jangan bangun UI approval untuk ini di tahap pertama kecuali diminta.
 - Geofencing guru pakai kombinasi GPS (radius dari `schools_ref`) + validasi IP dari `school_networks`. Untuk sekolah dengan ISP residensial ber-CGNAT (IP publik tidak stabil), solusinya `local_verifiers` — tapi ini juga belum aktif; tahap awal cukup GPS + IP publik yang stabil.
+
+### 2.5 Status Implementasi (progress log)
+
+**Sudah selesai (per 25-26 Juli 2026):**
+
+- Database `eduzone_absensi` dibuat di instance Postgres shared yang sama (`postgres` container). Sempat dibuat manual dulu lewat Adminer (16 tabel) sebelum migration Laravel ada — jadi urutan historisnya kebalik dari alur normal, tapi hasil akhirnya konsisten (lihat poin migration di bawah).
+- Koneksi `pgsql_absensi` terdaftar di `config/database.php` + `.env` (`DB_ABSENSI_CONNECTION`, `DB_ABSENSI_HOST`, dst — host tetap `postgres`, cuma nama database beda).
+- **16 migration file** dibuat di `database/migrations/`, penomoran `2025_01_01_000044` s.d. `2025_01_01_000059` (lanjut dari 43 migration DB utama yang sudah ada), tiap file pakai `protected $connection = 'pgsql_absensi';`. Sudah dijalankan (`php artisan migrate`) dan **berhasil DONE semua tanpa error** setelah database di-drop & dibuat ulang bersih.
+- Urutan tabel (sesuai dependency FK): `schools_ref` → `people_ref` → `devices` → `device_keys` → `schedules_ref` → `school_networks` → `local_verifiers` → `credentials` → `face_templates` → `attendance_events` → `attendance_daily` → `attendance_period` → `attendance_correction_log` → `sync_log` → `qr_tokens` → `presence_tickets`.
+- **16 model Eloquent** dibuat di `app/Models/Absensi/` (namespace `App\Models\Absensi`), plus trait `App\Models\Absensi\Concerns\HasCompositePrimaryKey` khusus untuk `PeopleRef` (satu-satunya tabel dengan composite primary key: `person_id` + `person_type` — Eloquent tidak native support ini, jadi `getKeyName()`/`setKeysForSaveQuery()`/dst di-override manual di trait tsb; konsekuensinya `PeopleRef::find($id)` **tidak bisa dipakai**, harus query lewat `where('person_id', ...)->where('person_type', ...)`).
+- Model yang PK-nya UUID dan **di-generate lokal** (bukan sync dari DB utama) pakai trait `HasUuids` bawaan Laravel: `Device`, `DeviceKey`, `SchoolNetwork`, `LocalVerifier`, `Credential`, `FaceTemplate`, `AttendanceDaily`, `AttendancePeriod`, `AttendanceCorrectionLog`, `QrToken`, `PresenceTicket`. Model yang PK-nya **harus sama persis dengan ID di DB utama** (hasil sync, bukan generate baru) **tidak** pakai `HasUuids`: `SchoolRef` (`school_id`), `PeopleRef` (`person_id`), `SchedulesRef` (`schedule_id`).
+- `AttendanceEvent` model sudah mengunci insert-only lewat model event `booted()` — `updating()`/`deleting()` melempar exception.
+- **Ditemukan & diperbaiki 1 inkonsistensi:** migration awal buat `presence_tickets.used_by_event_id` sempat salah ditambahkan foreign key ke `attendance_events` — schema asli (dan tabel yang sudah di-Adminer-buat) **tidak** punya FK di kolom ini (beda dengan `qr_tokens.used_by_event_id` yang memang punya FK). Sudah dikoreksi supaya migration cocok 100% dengan schema asli.
+- **Cross-check dengan `absensi-gateway`** (repo Go terpisah, folder lokal `absensi-gateway`, punya `main.go`, `auth.go`, `checkin_device.go`, `checkin_teacher.go`, `scheduling.go`, `docker-compose.yml`): repo ini sempat punya salinan schema sendiri (`01_schema.sql` & `absensi_schema.sql`, ternyata identik satu sama lain). **Keputusan:** `01_schema.sql` dihapus (duplikat), `absensi_schema.sql` dipertahankan sebagai **dokumentasi referensi read-only** untuk tim/kerja di sisi Go — bukan lagi dipakai buat provisioning. **Migration Laravel adalah satu-satunya sumber kebenaran** untuk schema `eduzone_absensi` sekarang; kalau ada perubahan kolom/tabel, ubah migration dulu, baru sinkronkan `absensi_schema.sql` supaya tetap akurat sebagai referensi.
+- `absensi-gateway` juga punya `02_seed.sql` (data dummy testing: 1 sekolah di Surabaya, 1 siswa dummy, RFID gerbang & lab) — dipakai lokal via `docker-compose.yml` Go, tidak ada hubungannya dengan migration Laravel, aman dipakai untuk testing tapi jangan sampai ke-provision otomatis bareng schema production.
+
+**Belum dikerjakan (langkah selanjutnya yang logis):**
+
+- Job sinkronisasi `attendance_daily`/`attendance_period` → `student_attendance`/`teacher_attendance` (dan tabel sejenis) di DB utama, tercatat di `sync_log`. **Belum ada di Laravel maupun `absensi-gateway`** — dikonfirmasi eksplisit di README `absensi-gateway` sebagai "sengaja belum dibuat", jadi ini murni pekerjaan yang masih kosong di kedua sisi.
+- Halaman/dashboard staff untuk lihat rekap absensi (per Wali Kelas/Guru Mapel/TU) — belum dikerjakan, kiosk device duluan yang selesai.
+- Halaman check-in guru via HP (geofencing GPS + JWT) — endpoint Go-nya (`POST /api/v1/checkin/teacher`) sudah ada, JWT issuer Laravel (`GatewayTokenIssuer`) sudah ada, tapi belum ada halaman/PWA yang benar-benar memanggilnya.
+- 5 tabel dorman (`device_keys`, `qr_tokens`, `attendance_correction_log`, `local_verifiers`, `presence_tickets`) tetap belum diaktifkan logikanya, sesuai rencana awal.
+- Face recognition: endpoint di gateway sudah ada tapi masih stub dummy (belum ada worker Python/InsightFace).
+- **Bersih-bersih kecil yang masih tertunda:** route `POST /kiosk/{deviceCode}/checkin` di `routes/kiosk.php` dan `AttendanceRecorder.php`/`CheckInController::store()` di Laravel perlu dihapus — sudah digantikan penuh oleh `absensi-gateway`, dibiarkan menggantung berisiko jadi write path ganda kalau nggak sengaja terpanggil.
+
+### 2.6 Integrasi dengan `absensi-gateway` (Go) — SUDAH JALAN END-TO-END (26 Juli 2026)
+
+Setelah membaca kode asli `absensi-gateway` (`main.go`, `auth.go`, `checkin_device.go`, `README.md`), ketauan gateway ini **jauh lebih matang** dari perkiraan awal — bukan cuma skeleton, tapi sudah py transaksi + advisory lock + deteksi anomali + resolve jadwal aktif untuk check-in device. **Keputusan final: `absensi-gateway` adalah write path resmi untuk check-in device (RFID/QR/Face)**, bukan Laravel. Laravel cuma nge-render halaman kiosk-nya (Blade + JS), request check-in-nya langsung ke gateway.
+
+**Yang sudah selesai & terbukti jalan (end-to-end, bukan cuma unit test):**
+
+- **Halaman kiosk** (`resources/views/kiosk/checkin.blade.php` + `resources/js/areas/kiosk.js`) — RFID & QR aktif, toggle Masuk/Pulang (karena `event_type` wajib dikirim eksplisit oleh client, tidak di-infer server-side), tab Manual & Wajah masih placeholder (gateway belum dukung method `manual`, Face masih stub tanpa worker Python).
+- **Route Laravel** `routes/kiosk.php` — `GET /kiosk/{deviceCode}` doang yang aktif dipakai (render halaman). Route `POST .../checkin` yang sempat dibuat sekarang **tidak dipakai** (lihat item bersih-bersih di §2.5).
+- **Integrasi JWT Laravel ↔ Go** (buat nanti dipakai check-in guru via HP): `firebase/php-jwt` terpasang, `App\Services\Absensi\GatewayTokenIssuer` menerbitkan token HS256 dengan claims `user_id`/`school_id`/`role` — HARUS sinkron manual dengan struct `middleware.TeacherClaims` di `auth.go` Go (tidak ada shared schema antar keduanya). Secret sama-sama di-set lewat env var `ABSENSI_GATEWAY_JWT_SECRET` (Laravel) dan `JWT_SECRET` (Go, `.env` gateway) — **nilainya harus identik**.
+- **⚠️ Risiko keamanan yang didokumentasikan gateway sendiri (README poin 8), belum diperbaiki:** JWT pakai *shared secret* HS256 antara Laravel & gateway. Kalau secret bocor dari sisi gateway, penyerang bisa menerbitkan token palsu untuk **seluruh sistem Eduzone**. Solusi jangka panjang: pindah ke RS256 (Laravel pegang private key, gateway cuma pegang public key buat verifikasi). Ini butuh perubahan di sisi Laravel (`GatewayTokenIssuer`) yang belum dikerjakan — dicatat di README gateway supaya tidak terlupakan.
+- **Proxy Nginx Proxy Manager**: Custom Location `/gateway` di host `eduzone.local` → `absensi-gateway:8080`, dengan `rewrite ^/gateway/(.*)$ /$1 break;` untuk strip prefix sebelum masuk ke Go (karena route Go didaftarkan sebagai `/api/v1/...` polos, bukan `/gateway/api/v1/...`).
+  - **Jebakan NPM yang ditemukan:** ada 2 tempat berbeda buat "advanced config" di NPM — tab **"Advanced"** di level host (nempel di level `server {}` Nginx, dieksekusi SEBELUM location matching) vs gear (⚙) di baris Custom Location itu sendiri (nempel di DALAM `location { }` yang bersangkutan). Rewrite prefix-stripping **wajib** di taruh di yang kedua (per-location) — kalau ketaruh di tab host-level, request akan salah location-matching dan jatuh ke `location /` (fallback ke Laravel), menghasilkan 404 dari Laravel sendiri (bukan 502 dari Nginx), yang sempat bikin bingung karena keliatannya seperti masalah routing Laravel padahal sebenarnya masalah scope rewrite Nginx.
+- **Device testing:** `GATE-01` (device umum, gerbang) sudah berhasil check-in end-to-end via browser kiosk maupun `curl`/`Invoke-RestMethod` langsung, pakai data dummy dari `02_seed.sql` (`CARD-ANDI-001` / `DEVKEY-GERBANG-01`).
 
 ---
 
@@ -151,11 +194,12 @@ Beberapa endpoint yang butuh concurrency tinggi (contoh yang sudah dibahas: bulk
 ```
 C:\laragon\www\eduzone\              ← source code Laravel (repo ini)
 ├── Dockerfile                       ← multi-stage: node-builder → base → development/production
-├── docker-compose.yml               ← app, vite, nginx, queue, scheduler — satu file
+├── docker-compose.yml               ← app, vite, nginx, queue, scheduler, reverb — satu file
 ├── docker\                          ← config yang di-copy ke image saat build
 │   ├── nginx\default.conf
 │   ├── php\php-dev.ini, php-fpm.conf, php-prod.ini
-│   └── postgres\...
+│   ├── postgres\...
+│   └── reverb\Dockerfile            ← build context service reverb (lihat §1 - pindah dari infra shared)
 └── .env                             ← dipakai BARENG oleh Laravel (artisan) & Docker Compose
                                         (docker compose otomatis baca .env di folder yang sama)
 ```
@@ -167,9 +211,10 @@ C:\opt\docker\infrastructure\
 ├── postgres\    → container `postgres`, image postgres:16-alpine, healthcheck aktif
 ├── redis\       → container `redis`, image redis:7-alpine, tanpa auth secara default
 ├── adminer\     → container `adminer`, GUI database di :8081, default server `postgres`
-├── reverb\      → container `reverb`, WebSocket Laravel Reverb di :8082
 └── (rencana ke depan: nginx-proxy-manager\, crowdsec\, uptime-kuma\)
 ```
+
+> **Reverb bukan lagi bagian dari folder infrastructure ini** — sudah dipindah jadi service dalam `docker-compose.yml` EduZone sendiri (lihat §1). Kalau masih nemu referensi `reverb\` di folder infrastructure lama, itu sisa struktur sebelum migrasi dan aman dihapus/diabaikan.
 
 `docker-compose.yml` di repo EduZone terhubung ke service-service ini lewat Docker network bernama `network` (driver **bridge**, subnet `172.20.0.0/16`) yang didefinisikan `external: true` — network-nya sendiri dibuat oleh compose infrastructure (`network/docker-compose.yml`), bukan oleh compose EduZone, dan harus dibuat **paling pertama** sebelum service lain manapun di-`up`.
 
@@ -242,4 +287,4 @@ Route superadmin pakai middleware `superadmin` (`SuperadminOnly`) — redirect k
 
 - Service Go Fiber sudah discaffold (lihat §5) tapi baru endpoint health-check/ping — belum ada logic bisnis. Rust encryption engine masih belum terlihat di repo manapun yang sudah dibagikan — perlu diverifikasi lokasinya.
 - Baru 6 controller yang benar-benar ada; sebagian besar modul di PRD baru sebatas schema database. **Ini disengaja** — EduZone adalah rebuild dari sistem sekolah single-tenant sebelumnya, dan skema database dirancang menyeluruh di awal sebelum controller/UI per modul mulai dibangun bertahap.
-- Schema `eduzone_absensi` sudah siap (lihat bagian 2), tapi migration Laravel-nya, konfigurasi koneksi database kedua di `config/database.php`, dan controller/route untuk modul Absensi belum digarap di repo ini — jadi urutan kerja modul Absensi kemungkinan besar: setup koneksi DB kedua → migration dari schema ini → model dengan `$connection` eksplisit → job sinkronisasi → controller/route/view.
+- Schema `eduzone_absensi` (§2), koneksi database kedua, migration, dan model Eloquent modul Absensi **sudah selesai** — lihat progress log lengkap di §2.5. Yang masih tersisa: job sinkronisasi ke DB utama, controller/route/view, dan pemetaan pembagian kerja dengan service Go `absensi-gateway` yang juga sudah mulai punya beberapa file logic (`auth.go`, `checkin_device.go`, `checkin_teacher.go`, `scheduling.go`) — isinya belum direview detail.

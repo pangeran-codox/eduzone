@@ -19,6 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
 
             Route::middleware('web')
                 ->group(base_path('routes/tenant.php'));
+
+            // Kiosk absensi (device fisik) - SENGAJA tanpa prefix/name di sini,
+            // karena routes/kiosk.php sudah punya Route::prefix('kiosk') sendiri
+            // di dalam filenya. Juga sengaja tanpa middleware tenant/auth -
+            // lihat komentar di routes/kiosk.php untuk alasannya.
+            Route::middleware('web')
+                ->group(base_path('routes/kiosk.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware) {

@@ -97,6 +97,24 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        // Koneksi kedua khusus modul Absensi (eduzone_absensi) - database terpisah
+        // dari DB utama, insert-only untuk attendance_events, tanpa FK lintas-database.
+        // Lihat ARCHITECTURE.md §2 & SKILL.md untuk detail alasan pemisahan ini.
+        'pgsql_absensi' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_ABSENSI_URL'),
+            'host' => env('DB_ABSENSI_HOST', '127.0.0.1'),
+            'port' => env('DB_ABSENSI_PORT', '5432'),
+            'database' => env('DB_ABSENSI_DATABASE', 'eduzone_absensi'),
+            'username' => env('DB_ABSENSI_USERNAME', 'root'),
+            'password' => env('DB_ABSENSI_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => 'prefer',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

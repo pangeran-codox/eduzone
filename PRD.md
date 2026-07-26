@@ -65,7 +65,7 @@ Urutan modul setelah Absensi belum ditentukan — akan diputuskan bertahap seiri
 |---|---|---|
 | **Autentikasi & Akses** | Login tenant, login superadmin terpisah, rate limiting, role middleware | ✅ Fondasi selesai |
 | **Multi-tenancy & Sekolah** | Isolasi data per sekolah, subscription plan | ✅ Schema + scope aktif |
-| **Absensi** | Absensi multi-metode (RFID, QR scan, face recognition, kiosk manual) untuk siswa/guru/staf, plus geofencing GPS untuk check-in guru via HP | 🚧 **Modul pertama yang digarap** — target MVP, database terpisah (`eduzone_absensi`) untuk high concurrency (lihat detail di ARCHITECTURE.md §2) |
+| **Absensi** | Absensi multi-metode (RFID, QR scan, face recognition, kiosk manual) untuk siswa/guru/staf, plus geofencing GPS untuk check-in guru via HP | 🚧 **Modul pertama yang digarap** — database, migration, model Eloquent **selesai**. **Halaman kiosk RFID/QR sudah live & teruji end-to-end** lewat `absensi-gateway` (Go, write path resmi). Belum: dashboard staff, halaman check-in guru via HP, job sinkronisasi ke DB utama, face recognition (masih stub). Detail progress di ARCHITECTURE.md §2.5-2.6 |
 | **Akademik** | Jurusan, kelas, jadwal, wali kelas, jurnal mengajar | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Penilaian** | Konfigurasi nilai, nilai siswa, bank soal ujian | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Kesiswaan** | Sikap siswa, prestasi, rekam jejak, konseling BK | 🔲 Schema selesai, menyusul setelah Absensi |
@@ -109,7 +109,7 @@ Modul Absensi dirancang sebagai sistem absensi multi-metode, bukan sekadar tombo
 - **Concurrency tinggi**: endpoint tertentu (mis. bulk attendance) direncanakan dilayani microservice Go Fiber, bukan lewat Laravel langsung.
 - **Observability**: Laravel Horizon (queue) dan Telescope (debug/query) tersedia khusus untuk superadmin.
 - **Real-time**: notifikasi booking/absensi via Laravel Reverb (WebSocket).
-- **Containerized deployment**: seluruh service (app, nginx, queue, scheduler, vite) berjalan di Docker, dipisahkan dari config infrastruktur shared (postgres, redis, reverb, nginx-proxy-manager).
+- **Containerized deployment**: seluruh service (app, nginx, queue, scheduler, vite, reverb) berjalan di Docker dalam satu `docker-compose.yml` EduZone, dipisahkan dari config infrastruktur shared (cuma postgres, redis, nginx-proxy-manager, adminer — reverb sudah dipindah keluar dari infrastruktur shared karena terikat ke satu instalasi Laravel spesifik).
 
 ---
 
