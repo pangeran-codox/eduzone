@@ -12,7 +12,7 @@
 // Docker internal (mis. "absensi-gateway") - browser di kiosk fisik tidak
 // bisa resolve hostname Docker itu. Ini juga sekalian menghindari CORS
 // karena origin-nya jadi sama persis dengan halaman kiosk.
-import '../bootstrap';
+// import '../bootstrap';
 import '../../css/app.css';
 
 const GATEWAY_BASE_PATH = '/gateway/api/v1';

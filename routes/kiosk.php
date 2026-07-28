@@ -10,25 +10,17 @@ use Illuminate\Support\Facades\Route;
 |
 | SENGAJA terpisah dari routes/tenant.php - kiosk BUKAN halaman user login,
 | jadi TIDAK pakai middleware ['auth','active','tenant']. Identitas & scope
-| sekolah ditentukan dari {device} (device_code) di URL, bukan dari sesi user.
-| Endpoint POST divalidasi via header X-Device-Key (lihat CheckInController).
+| sekolah ditentukan dari {deviceCode} di URL, bukan dari sesi user.
 |
-| Perlu didaftarkan di bootstrap/app.php, konsisten dengan cara tenant.php /
-| superadmin.php didaftarkan di situ. Cek dulu pola yang sudah ada, tapi
-| kurang lebih begini:
+| KEPUTUSAN FINAL (lihat ARCHITECTURE.md §2.6): check-in device dipegang
+| PENUH oleh `absensi-gateway` (Go), lewat proxy NPM /gateway. Route di sini
+| cuma buat RENDER halaman - route POST checkin yang dulu ada di sini sudah
+| dihapus, jangan ditambah lagi kecuali keputusan §2.6 berubah.
 |
-|   ->withRouting(
-|       web: __DIR__.'/../routes/web.php',
-|       then: function () {
-|           Route::middleware('web')->group(base_path('routes/tenant.php'));
-|           Route::middleware('web')->group(base_path('routes/superadmin.php'));
-|           Route::middleware('web')->group(base_path('routes/kiosk.php')); // <- tambahkan ini
-|       },
-|   )
-|
+| Terdaftar di bootstrap/app.php:
+|   Route::middleware('web')->group(base_path('routes/kiosk.php'));
 */
 
 Route::prefix('kiosk')->name('kiosk.')->group(function () {
     Route::get('/{deviceCode}', [CheckInController::class, 'show'])->name('checkin.show');
-    Route::post('/{deviceCode}/checkin', [CheckInController::class, 'store'])->name('checkin.store');
 });
