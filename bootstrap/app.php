@@ -26,6 +26,14 @@ return Application::configure(basePath: dirname(__DIR__))
             // lihat komentar di routes/kiosk.php untuk alasannya.
             Route::middleware('web')
                 ->group(base_path('routes/kiosk.php'));
+
+            // Internal sync (absensi-gateway Go -> Laravel, server-to-server).
+            // SENGAJA TANPA middleware 'web' - bukan halaman browser, tidak
+            // butuh session/CSRF. Cuma dilindungi 'sync.token' (X-Sync-Token).
+            // Lihat routes/sync.php & docs/laravel-sync-contract.md (repo gateway).
+            Route::middleware('sync.token')
+                ->prefix('api/internal/sync')
+                ->group(base_path('routes/sync.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware) {
@@ -36,6 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'active'         => \App\Http\Middleware\EnsureUserIsActive::class,
             'superadmin'     => \App\Http\Middleware\SuperadminOnly::class,
             'horizon.auth'   => \App\Http\Middleware\SuperadminOnly::class,
+            'sync.token'     => \App\Http\Middleware\VerifySyncToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

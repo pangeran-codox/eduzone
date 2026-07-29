@@ -11,19 +11,29 @@ return new class extends Migration
     // disinkron dari DB utama, ditampilkan di response check-in Go
     // (person.photo_url, selalu ada - foto asli atau avatar inisial SVG
     // generated kalau belum ada foto).
+    //
+    // GUARD hasColumn(): kolom ini sempat sudah ditambahkan manual duluan
+    // di database fisik (lewat absensi_schema.sql versi terbaru) sebelum
+    // migration ini dibuat - guard ini bikin migration tetap AMAN dijalankan
+    // (no-op kalau sudah ada), sambil tetap tercatat "sudah jalan" di
+    // tabel migrations Laravel untuk konsistensi riwayat.
     protected $connection = 'pgsql_absensi';
 
     public function up(): void
     {
-        Schema::table('people_ref', function (Blueprint $table) {
-            $table->text('photo_url')->nullable()->after('full_name');
-        });
+        if (! Schema::hasColumn('people_ref', 'photo_url')) {
+            Schema::table('people_ref', function (Blueprint $table) {
+                $table->text('photo_url')->nullable()->after('full_name');
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('people_ref', function (Blueprint $table) {
-            $table->dropColumn('photo_url');
-        });
+        if (Schema::hasColumn('people_ref', 'photo_url')) {
+            Schema::table('people_ref', function (Blueprint $table) {
+                $table->dropColumn('photo_url');
+            });
+        }
     }
 };

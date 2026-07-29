@@ -10,12 +10,19 @@ return new class extends Migration
     // Nyatet progress sinkronisasi MASUK (Laravel -> absensi-gateway) untuk
     // schools_ref/people_ref/schedules_ref. Ditulis oleh Go (internal/sync/puller.go),
     // Laravel TIDAK menulis ke tabel ini - cukup dibaca kalau nanti butuh
-    // dashboard monitoring status sync. Satu baris per resource, dipakai
-    // sebagai watermark "ambil data yang updated_at-nya lebih baru dari ini".
+    // dashboard monitoring status sync.
+    //
+    // GUARD hasTable(): sama seperti migration photo_url, tabel ini
+    // kemungkinan sudah dibuat manual duluan lewat absensi_schema.sql -
+    // guard bikin migration aman dijalankan tanpa dobel-create/dobel-insert.
     protected $connection = 'pgsql_absensi';
 
     public function up(): void
     {
+        if (Schema::hasTable('ref_sync_state')) {
+            return;
+        }
+
         Schema::create('ref_sync_state', function (Blueprint $table) {
             $table->string('resource', 30)->primary();
             $table->timestampTz('last_synced_at')->nullable();
