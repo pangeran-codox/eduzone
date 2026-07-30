@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    // Integrasi dengan absensi-gateway (Go). jwt_secret dipakai
+    // GatewayTokenIssuer buat menerbitkan token guru (harus SAMA PERSIS
+    // dengan JWT_SECRET di .env gateway). sync_token dipakai VerifySyncToken
+    // buat verifikasi header X-Sync-Token dari gateway (harus SAMA PERSIS
+    // dengan LARAVEL_SYNC_TOKEN di .env gateway) - lihat
+    // docs/laravel-sync-contract.md di repo absensi-gateway.
+    'absensi_gateway' => [
+        'jwt_secret' => env('ABSENSI_GATEWAY_JWT_SECRET'),
+        'jwt_ttl' => env('ABSENSI_GATEWAY_JWT_TTL', 900),
+        'sync_token' => env('ABSENSI_SYNC_TOKEN'),
+    ],
+
 ];
