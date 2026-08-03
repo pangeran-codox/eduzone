@@ -51,6 +51,10 @@ class SyncController extends Controller
                 'latitude' => (float) $s->latitude,
                 'longitude' => (float) $s->longitude,
                 'geofence_radius_meters' => (int) ($s->geofence_radius_meters ?? 150),
+                // null kalau admin belum atur jam masuk - JANGAN kasih default
+                // di sini, gateway sengaja tidak menandai Terlambat sampai
+                // field ini terisi (lihat laravel-sync-contract.md).
+                'late_cutoff_time' => $s->late_cutoff_time,
                 'is_active' => (bool) $s->is_active,
                 'updated_at' => $this->toRfc3339($s->updated_at),
             ])->values()
