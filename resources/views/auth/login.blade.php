@@ -1,8 +1,8 @@
-{{--
+﻿{{--
     Asumsi yang dipakai di file ini (sesuaikan kalau beda dengan struktur repo aktual):
     - Route login tenant didaftarkan di routes/web.php sebagai name('login'), method POST ke route yang sama.
-    - Field: email, password, remember. Standar Laravel auth (Breeze-style) — sesuaikan
-      nama field kalau LoginRequest custom pakai nama lain (mis. username bukan email).
+    - Field: login (email atau username), password, remember — cocok dengan LoginController
+      yang mem-validasi field 'login' dan fallback Auth::attempt ke email lalu username.
     - Halaman ini berdiri sendiri (bukan @extends ke layout lain) karena guest page biasanya
       punya shell berbeda dari authenticated app shell. Kalau sudah ada layouts/guest.blade.php,
       pindahkan <head> & wrapper <html> ke sana dan ganti file ini jadi @extends('layouts.guest').
@@ -107,14 +107,14 @@
                     @csrf
 
                     <div>
-                        <label for="email" class="block text-xs font-medium mb-1.5" style="color:#4A4A44;">
+                        <label for="login" class="block text-xs font-medium mb-1.5" style="color:#4A4A44;">
                             Email
                         </label>
                         <input
-                            id="email"
-                            type="email"
-                            name="email"
-                            value="{{ old('email') }}"
+                            id="login"
+                            type="text"
+                            name="login"
+                            value="{{ old('login') }}"
                             placeholder="nama@sekolah.sch.id"
                             required
                             autofocus
@@ -122,7 +122,7 @@
                             class="w-full h-10 rounded-md px-3 text-sm border focus:outline-none focus:ring-2"
                             style="border-color:#D8D4C6; background:#fff; color:#1C1C1A; --tw-ring-color:#1B3A34;"
                         >
-                        @error('email')
+                        @error('login')
                             <p class="text-xs mt-1" style="color:#A32D2D;">{{ $message }}</p>
                         @enderror
                     </div>
