@@ -48,6 +48,11 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         })->name('dashboard');
     });
 
+    Route::middleware('role:wali_kelas')->group(function () {
+    Route::get('/absensi', [\App\Http\Controllers\Tenant\WaliKelas\AbsensiController::class, 'dashboard'])
+        ->name('wali_kelas.absensi.dashboard');
+    });
+
     // ── Kesiswaan ──────────────────────────────────────────────────────
     Route::prefix('kesiswaan')->name('kesiswaan.')->middleware('role:kesiswaan')->group(function () {
         Route::get('/dashboard', function () {
