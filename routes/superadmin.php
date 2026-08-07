@@ -3,6 +3,7 @@
 use App\Http\Controllers\Superadmin\Auth\SuperadminLoginController;
 use App\Http\Controllers\Superadmin\DashboardController;
 use App\Http\Controllers\Superadmin\AbsensiHealthController;
+use App\Http\Controllers\Superadmin\DeviceController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -52,5 +53,15 @@ Route::middleware('superadmin')->group(function () {
 
     Route::get('/absensi/health/status', [AbsensiHealthController::class, 'status'])
         ->name('absensi.health.status');
+
+    Route::prefix('absensi/devices')->name('absensi.devices.')->group(function () {
+    Route::get('/', [DeviceController::class, 'index'])->name('index');
+    Route::get('/create', [DeviceController::class, 'create'])->name('create');
+    Route::post('/', [DeviceController::class, 'store'])->name('store');
+    Route::get('/{device}/edit', [DeviceController::class, 'edit'])->name('edit');
+    Route::put('/{device}', [DeviceController::class, 'update'])->name('update');
+    Route::delete('/{device}', [DeviceController::class, 'destroy'])->name('destroy');
+    Route::post('/{device}/regenerate-key', [DeviceController::class, 'regenerateKey'])->name('regenerate-key');
+});
 
 });

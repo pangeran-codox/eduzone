@@ -242,6 +242,23 @@
             Langganan
         </a>
 
+        <p class="nav-section">Absensi</p>
+            <a href="{{ route('superadmin.absensi.health') }}"
+            class="nav-item {{ request()->routeIs('superadmin.absensi.health') ? 'active' : '' }}">
+                <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.652a3.75 3.75 0 010-5.304m5.304 0a3.75 3.75 0 010 5.304m-7.425 2.121a6.75 6.75 0 010-9.546m9.546 0a6.75 6.75 0 010 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12z"/>
+                </svg>
+                Status Layanan
+            </a>
+        
+        <a href="{{ route('superadmin.absensi.devices.index') }}"
+           class="nav-item {{ request()->routeIs('superadmin.absensi.devices.*') ? 'active' : '' }}">
+            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/>
+            </svg>
+            Device Absensi
+        </a>
+
         <p class="nav-section">Sistem</p>
         <a href="{{ route('superadmin.logs') }}"
            class="nav-item {{ request()->routeIs('superadmin.logs') ? 'active' : '' }}">
