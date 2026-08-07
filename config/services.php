@@ -44,7 +44,8 @@ return [
     'absensi_gateway' => [
         'jwt_secret' => env('ABSENSI_GATEWAY_JWT_SECRET'),
         'jwt_ttl' => env('ABSENSI_GATEWAY_JWT_TTL', 900),
-        'sync_token' => env('ABSENSI_SYNC_TOKEN'),
+        'sync_token' => env('ABSENSI_SYNC_TOKEN'), // <- sudah ada sebelumnya
+        'base_url'   => env('ABSENSI_GATEWAY_BASE_URL', 'http://absensi-gateway:8080'), // <- BARU
     ],
 
 ];

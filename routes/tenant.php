@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Tenant\AbsensiHealthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -108,5 +109,9 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
                 : response(eduzone_placeholder_dashboard('Dashboard Siswa — segera hadir'), 200);
         })->name('dashboard');
     });
+
+    Route::get('/absensi/health', [AbsensiHealthController::class, 'status'])
+    ->name('tenant.absensi.health.status');
+
 
 });

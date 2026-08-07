@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Superadmin\Auth\SuperadminLoginController;
 use App\Http\Controllers\Superadmin\DashboardController;
+use App\Http\Controllers\Superadmin\AbsensiHealthController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -44,4 +45,12 @@ Route::middleware('superadmin')->group(function () {
 
     // Logs
     Route::get('/logs', [DashboardController::class, 'logs'])->name('logs');
+
+    // Absensi — health check gateway/DB/sync/device per sekolah
+    Route::get('/absensi/health', [AbsensiHealthController::class, 'index'])
+        ->name('absensi.health');
+
+    Route::get('/absensi/health/status', [AbsensiHealthController::class, 'status'])
+        ->name('absensi.health.status');
+
 });
