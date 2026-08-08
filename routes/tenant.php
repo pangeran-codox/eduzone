@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Tenant\AbsensiHealthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -10,6 +11,26 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
+// Helper: HTML placeholder + tombol logout, dipakai semua dashboard yang
+// belum punya view sungguhan. Sementara saja — begitu view
+// tenant.{role}.dashboard.index ada, closure ini otomatis tidak dipakai lagi
+// (lihat pengecekan view()->exists() di tiap route di bawah).
+if (! function_exists('eduzone_placeholder_dashboard')) {
+    function eduzone_placeholder_dashboard(string $title): string
+    {
+        $logoutUrl = route('logout');
+        $csrf = csrf_token();
+
+        return <<<HTML
+            <h1>{$title}</h1>
+            <form method="POST" action="{$logoutUrl}" style="margin-top:1rem;">
+                <input type="hidden" name="_token" value="{$csrf}">
+                <button type="submit">Keluar</button>
+            </form>
+        HTML;
+    }
+}
+
 Route::middleware(['auth', 'active', 'tenant'])->group(function () {
 
     // ── Kepala Sekolah ─────────────────────────────────────────────────
@@ -17,7 +38,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.kepsek.dashboard.index')
                 ? view('tenant.kepsek.dashboard.index')
-                : response('<h1>Dashboard Kepala Sekolah — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Kepala Sekolah — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -26,7 +47,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.kurikulum.dashboard.index')
                 ? view('tenant.kurikulum.dashboard.index')
-                : response('<h1>Dashboard Kurikulum — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Kurikulum — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -35,7 +56,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.tu.dashboard.index')
                 ? view('tenant.tu.dashboard.index')
-                : response('<h1>Dashboard Tata Usaha — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Tata Usaha — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -44,7 +65,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.guru.dashboard.index')
                 ? view('tenant.guru.dashboard.index')
-                : response('<h1>Dashboard Guru — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Guru — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -58,7 +79,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.kesiswaan.dashboard.index')
                 ? view('tenant.kesiswaan.dashboard.index')
-                : response('<h1>Dashboard Kesiswaan — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Kesiswaan — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -67,7 +88,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.bk.dashboard.index')
                 ? view('tenant.bk.dashboard.index')
-                : response('<h1>Dashboard BK — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard BK — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -76,7 +97,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.toolman.dashboard.index')
                 ? view('tenant.toolman.dashboard.index')
-                : response('<h1>Dashboard Toolman — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Toolman — segera hadir'), 200);
         })->name('dashboard');
     });
 
@@ -85,8 +106,12 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/dashboard', function () {
             return view()->exists('tenant.siswa.dashboard.index')
                 ? view('tenant.siswa.dashboard.index')
-                : response('<h1>Dashboard Siswa — segera hadir</h1>', 200);
+                : response(eduzone_placeholder_dashboard('Dashboard Siswa — segera hadir'), 200);
         })->name('dashboard');
     });
+
+    Route::get('/absensi/health', [AbsensiHealthController::class, 'status'])
+    ->name('tenant.absensi.health.status');
+
 
 });

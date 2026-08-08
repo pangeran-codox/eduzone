@@ -2,6 +2,10 @@
 
 use App\Http\Controllers\Superadmin\Auth\SuperadminLoginController;
 use App\Http\Controllers\Superadmin\DashboardController;
+use App\Http\Controllers\Superadmin\AbsensiHealthController;
+use App\Http\Controllers\Superadmin\DeviceController;
+use App\Http\Controllers\Superadmin\SchoolController;
+use App\Http\Controllers\Superadmin\UserController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -29,13 +33,16 @@ Route::middleware('superadmin')->group(function () {
 
     // Schools management
     Route::prefix('schools')->name('schools.')->group(function () {
-        Route::get('/',            [DashboardController::class, 'schools'])->name('index');
+    Route::get('/', [SchoolController::class, 'index'])->name('index');
+    Route::get('/create', [SchoolController::class, 'create'])->name('create');
+    Route::post('/', [SchoolController::class, 'store'])->name('store');
+    Route::get('/{school}/edit', [SchoolController::class, 'edit'])->name('edit');
+    Route::put('/{school}', [SchoolController::class, 'update'])->name('update');
+    Route::delete('/{school}', [SchoolController::class, 'destroy'])->name('destroy');
     });
 
     // Users management
-    Route::prefix('users')->name('users.')->group(function () {
-        Route::get('/', [DashboardController::class, 'users'])->name('index');
-    });
+    Route::get('/users', [UserController::class, 'index'])->name('users.index');
 
     // Subscriptions
     Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
@@ -44,4 +51,22 @@ Route::middleware('superadmin')->group(function () {
 
     // Logs
     Route::get('/logs', [DashboardController::class, 'logs'])->name('logs');
+
+    // Absensi — health check gateway/DB/sync/device per sekolah
+    Route::get('/absensi/health', [AbsensiHealthController::class, 'index'])
+        ->name('absensi.health');
+
+    Route::get('/absensi/health/status', [AbsensiHealthController::class, 'status'])
+        ->name('absensi.health.status');
+
+    Route::prefix('absensi/devices')->name('absensi.devices.')->group(function () {
+    Route::get('/', [DeviceController::class, 'index'])->name('index');
+    Route::get('/create', [DeviceController::class, 'create'])->name('create');
+    Route::post('/', [DeviceController::class, 'store'])->name('store');
+    Route::get('/{device}/edit', [DeviceController::class, 'edit'])->name('edit');
+    Route::put('/{device}', [DeviceController::class, 'update'])->name('update');
+    Route::delete('/{device}', [DeviceController::class, 'destroy'])->name('destroy');
+    Route::post('/{device}/regenerate-key', [DeviceController::class, 'regenerateKey'])->name('regenerate-key');
+});
+
 });
