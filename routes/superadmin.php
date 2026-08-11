@@ -6,6 +6,8 @@ use App\Http\Controllers\Superadmin\AbsensiHealthController;
 use App\Http\Controllers\Superadmin\DeviceController;
 use App\Http\Controllers\Superadmin\SchoolController;
 use App\Http\Controllers\Superadmin\UserController;
+use App\Http\Controllers\Superadmin\ActivityLogController;
+use App\Http\Controllers\Superadmin\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -46,11 +48,17 @@ Route::middleware('superadmin')->group(function () {
 
     // Subscriptions
     Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
-        Route::get('/', [DashboardController::class, 'subscriptions'])->name('index');
-    });
+    Route::get('/', [SubscriptionController::class, 'index'])->name('index');
+    Route::get('/create', [SubscriptionController::class, 'create'])->name('create');
+    Route::post('/', [SubscriptionController::class, 'store'])->name('store');
+    Route::get('/{subscription}/edit', [SubscriptionController::class, 'edit'])->name('edit');
+    Route::put('/{subscription}', [SubscriptionController::class, 'update'])->name('update');
+    Route::delete('/{subscription}', [SubscriptionController::class, 'destroy'])->name('destroy');
+});
+
 
     // Logs
-    Route::get('/logs', [DashboardController::class, 'logs'])->name('logs');
+    Route::get('/logs', [ActivityLogController::class, 'index'])->name('logs');
 
     // Absensi — health check gateway/DB/sync/device per sekolah
     Route::get('/absensi/health', [AbsensiHealthController::class, 'index'])

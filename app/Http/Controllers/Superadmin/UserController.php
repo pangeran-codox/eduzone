@@ -29,13 +29,6 @@ class UserController extends Controller
     public function index(Request $request): View
     {
         $users = User::query()
-            // Superadmin lintas sekolah — lihat SKILL.md bagian "Query &
-            // Tenant Scope". Kalau ternyata User model tidak pakai
-            // BelongsToSchool/SchoolScope (school_id-nya nullable, dipakai
-            // juga untuk akun superadmin sendiri), method ini mungkin tidak
-            // perlu/tidak ada — hapus baris ini kalau muncul error method
-            // withoutTenant() not found.
-            ->withoutTenant()
             ->when($request->filled('school'), fn ($q) => $q->where('school_id', $request->input('school')))
             ->when($request->filled('role'), fn ($q) => $q->where('role', $request->input('role')))
             ->when($request->filled('search'), function ($q) use ($request) {
