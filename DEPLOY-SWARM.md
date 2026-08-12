@@ -61,12 +61,15 @@ Verifikasi infrastruktur berjalan:
 docker stack services infrastructure
 ```
 
-Pastikan database `eduzone` ada di daftar `POSTGRES_MULTIPLE_DATABASES` / script
+Pastikan database `eduzone` dan `eduzone_absensi` ada di daftar `POSTGRES_MULTIPLE_DATABASES` / script
 `init-multiple-db.sh` (lihat `ARCHITECTURE.md` §6) — kalau infra ini sebelumnya cuma disetup
-buat Lab Management, database `eduzone` mungkin belum ada, perlu ditambahkan manual:
+buat Lab Management, keduanya mungkin belum ada, perlu ditambahkan manual:
 ```bash
 docker exec -it $(docker ps -q -f name=infrastructure_postgres) psql -U laravel -c "CREATE DATABASE eduzone;"
+docker exec -it $(docker ps -q -f name=infrastructure_postgres) psql -U laravel -c "CREATE DATABASE eduzone_absensi;"
 ```
+
+⚠️ **JANGAN SKIP pembuatan `eduzone_absensi` meskipun modul Absensi belum dipakai di tenant pertama** — 19 migration file Laravel (nomor `000044`–`000062`) semuanya pakai `protected $connection = 'pgsql_absensi';` dan mengarah ke database ini. Kalau database ini tidak ada, `php artisan migrate` di step deploy berikutnya akan **gagal total** untuk keseluruhan migration (tidak cuma migration Absensi yang dilewati).
 
 ---
 
@@ -95,6 +98,43 @@ dan `.env`) ke server, lalu:
 cd /opt/eduzone   # atau lokasi kamu taruh di server
 
 cp .env.example .env   # isi APP_KEY, DB_PASSWORD, REVERB_*, dst — nilai PRODUCTION, bukan lokal
+```
+
+Selain APP_KEY/DB/REDIS/REVERB standar, **wajib isi juga 8 environment variable berikut**
+(sudah ada di `.env.example` terbaru, tapi perlu dicek khusus untuk production):
+
+```env
+# === Database kedua (modul Absensi): JANGAN KOSONG meskipun modul Absensi belum dipakai
+DB_ABSENSI_CONNECTION=pgsql_absensi
+DB_ABSENSI_HOST=postgres
+DB_ABSENSI_PORT=5432
+DB_ABSENSI_DATABASE=eduzone_absensi
+DB_ABSENSI_USERNAME=laravel
+DB_ABSENSI_PASSWORD=<PASSWORD_POSTGRES_INFRA>
+
+# === Integrasi dengan absensi-gateway (repo Go, write path check-in resmi)
+# Base URL: nama service Go di Docker/Swarm (bukan domain publik)
+ABSENSI_GATEWAY_BASE_URL=http://absensi-gateway-absensi-gateway-1:8080
+# Shared-secret 1: untuk MENERBITKAN & MEMVERIFIKASI JWT check-in guru via HP (HS256).
+# NILAI INI HARUS IDENTIK dengan JWT_SECRET di .env absensi-gateway Go.
+# (Catatan: Class GatewayTokenIssuer yang pakai env ini BELUM diimplementasikan
+#  di sisi Laravel — package firebase/php-jwt juga belum terinstall — jadi untuk
+#  saat ini env ini cuma sebagai placeholder, TAPI TETAP ISI dengan nilai yang
+#  aman supaya nanti tidak perlu ganti semua environment lagi.)
+ABSENSI_GATEWAY_JWT_SECRET=<RANDOM_STRING_PANJANG>
+ABSENSI_GATEWAY_JWT_TTL=900
+
+# Shared-secret 2 (TERPISAH dari JWT_SECRET!): untuk MEMVERIFIKASI header
+# X-Sync-Token request pull dari gateway ke endpoint /api/internal/sync/*.
+# NILAI INI HARUS IDENTIK dengan LARAVEL_SYNC_TOKEN di .env absensi-gateway Go.
+ABSENSI_SYNC_TOKEN=<RANDOM_STRING_PANJANG_YANG_BEDA_DARI_JWT_SECRET>
+```
+
+⚠️ **Penting:** Jangan samakan nilai `ABSENSI_GATEWAY_JWT_SECRET` dan `ABSENSI_SYNC_TOKEN`.
+Mereka punya use case berbeda — JWT untuk end-user (guru via HP), sync token untuk
+server-to-server. Kalau salah satu bocor, hanya use case tersebut yang terdampak.
+
+```bash
 export DOCKER_IMAGE=<REGISTRY>/eduzone:latest
 
 docker stack deploy -c docker-compose.swarm.yml eduzone

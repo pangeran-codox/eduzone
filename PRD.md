@@ -52,7 +52,7 @@ Satu user bisa punya lebih dari satu role pada middleware route (mis. `role:guru
 
 ## 4. Modul & Fitur (berdasarkan skema database yang sudah ada)
 
-**Strategi rilis:** karena skala aplikasi besar (10+ modul, 39+ tabel), EduZone tidak dibangun sekaligus. Modul dibangun **satu per satu**, dimulai dari **fitur Absensi** sebagai modul pertama. Tujuannya dua hal:
+**Strategi rilis:** karena skala aplikasi besar (10+ modul, **68 migration file** = 49+ tabel DB utama + 17 tabel DB Absensi), EduZone tidak dibangun sekaligus. Modul dibangun **satu per satu**, dimulai dari **fitur Absensi** sebagai modul pertama. Tujuannya dua hal:
 
 1. Memperkenalkan EduZone ke sekolah lebih cepat — sekolah sudah bisa mulai memakai platform meski baru sebatas absensi, tidak perlu menunggu semua modul selesai.
 2. Validasi arsitektur inti (auth, multi-tenancy, role, docker) lewat satu fitur nyata yang dipakai end-to-end, sebelum modul lain menyusul di atas fondasi yang sama.
@@ -65,18 +65,18 @@ Urutan modul setelah Absensi belum ditentukan — akan diputuskan bertahap seiri
 |---|---|---|
 | **Autentikasi & Akses** | Login tenant, login superadmin terpisah, rate limiting, role middleware | ✅ Fondasi selesai |
 | **Multi-tenancy & Sekolah** | Isolasi data per sekolah, subscription plan | ✅ Schema + scope aktif |
-| **Absensi** | Absensi multi-metode (RFID, QR scan, face recognition, kiosk manual) untuk siswa/guru/staf, plus geofencing GPS untuk check-in guru via HP | 🚧 **Modul pertama yang digarap** — database, migration, model Eloquent **selesai**. **Halaman kiosk RFID/QR sudah live & teruji end-to-end** lewat `absensi-gateway` (Go, write path resmi). Belum: dashboard staff, halaman check-in guru via HP, job sinkronisasi ke DB utama, face recognition (masih stub). Detail progress di ARCHITECTURE.md §2.5-2.6 |
+| **Absensi** | Absensi multi-metode (RFID, QR scan, face recognition, kiosk manual) untuk siswa/guru/staf, plus geofencing GPS untuk check-in guru via HP | 🚧 **Modul pertama yang digarap** — progress signifikan. ✅ Database Absensi fisik terpisah (`eduzone_absensi`), **19 migration** (000044–000062), **17 model Eloquent** Absensi termasuk `RefSyncState` read-only. ✅ Halaman kiosk RFID/QR live & teruji end-to-end lewat `absensi-gateway` (Go write path resmi). ✅ Sync Pull 3 endpoint (`/api/internal/sync/schools|people|schedules`) + middleware `VerifySyncToken` header `X-Sync-Token`. ✅ Device Management UI Superadmin (CRUD + regenerate-key SHA-256, 5 tipe device enum). ✅ Health Check dashboard Superadmin lintas sekolah + widget ringkas per tenant (cache 30 detik, treshold stale 10 menit / offline 5 menit). ✅ Dashboard Wali Kelas Absensi route + view placeholder. Belum: job sinkronisasi rekap harian ke DB utama, halaman check-in guru via HP (**`GatewayTokenIssuer` class + `firebase/php-jwt` package belum diimplementasikan** — endpoint Go sudah ada, tapi sisi Laravel belum siap), face recognition masih stub gateway. Detail progress lengkap di ARCHITECTURE.md §2.5-2.6 |
 | **Akademik** | Jurusan, kelas, jadwal, wali kelas, jurnal mengajar | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Penilaian** | Konfigurasi nilai, nilai siswa, bank soal ujian | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Kesiswaan** | Sikap siswa, prestasi, rekam jejak, konseling BK | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Laboratorium** | Booking lab, kunjungan lab, inventaris, laporan toolman | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Keuangan** | Pemasukan/pengeluaran, dana BOS, pengajuan & realisasi anggaran, audit keuangan | 🔲 Schema selesai, menyusul setelah Absensi |
 | **Pengumuman** | Broadcast informasi ke sekolah | 🔲 Schema selesai, menyusul setelah Absensi |
-| **Superadmin** | Dashboard, manajemen sekolah, subscription, audit log | 🟡 Dashboard dasar ada |
-| **Keamanan Data Sensitif** | Enkripsi data sensitif siswa/guru/staf via gRPC service terpisah (Rust) | ✅ Service & proto ada |
-| **Notifikasi Real-time** | Laravel Reverb (WebSocket) untuk notifikasi booking/absensi | 🟡 Infrastruktur siap, fitur belum dipetakan |
+| **Superadmin** | Dashboard, manajemen sekolah, subscription, CRUD device, audit/activity log, health check monitoring absensi | 🟡 Dashboard dasar + **School CRUD (create/edit/destroy)**, **Subscription plan CRUD**, **User management**, **Device CRUD + regenerate-key**, **Absensi Health monitoring dashboard**, **Activity Log viewer** — semua view + controller sudah ada |
+| **Keamanan Data Sensitif** | Enkripsi data sensitif siswa/guru/staf via gRPC service terpisah (Rust) | ⚠️ Package & service class `EncryptionGrpcService.php` ada, proto stub disiapkan. **TAPI ext-grpc/ext-protobuf PHP extension DICOMENTAR di Dockerfile** (compile 1 jam, belum ada flow yang benar-benar memanggilnya). DITUNDA sampai encryption Rust siap. |
+| **Notifikasi Real-time** | Laravel Reverb (WebSocket) untuk notifikasi booking/absensi | 🟡 Infrastruktur siap (service `reverb` + `docker/reverb/Dockerfile` di compose), fitur belum dipetakan |
 
-> **Catatan:** Ini adalah rebuild dari sistem sekolah single-tenant sebelumnya menjadi platform SaaS multi-tenant yang jauh lebih besar. Skema database (39+ tabel) dirancang lebih dulu secara menyeluruh; controller/UI dibangun bertahap menyusul, dimulai dari Absensi.
+> **Catatan:** Ini adalah rebuild dari sistem sekolah single-tenant sebelumnya menjadi platform SaaS multi-tenant yang jauh lebih besar. **68 file migration** (~66 tabel gabungan DB utama `eduzone` + DB Absensi `eduzone_absensi`) dirancang lebih dulu secara menyeluruh; controller/UI dibangun bertahap menyusul, dimulai dari Absensi.
 
 ### 4.1 Cakupan MVP Absensi
 

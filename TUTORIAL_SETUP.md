@@ -43,12 +43,12 @@ docker exec postgres psql -U laravel -l
 ```
 
 EduZone butuh 2 database:
-- `eduzone_saas` — database utama
+- `eduzone` — database utama (sesuai `.env.example` & README resmi, BUKAN `eduzone_saas`)
 - `eduzone_absensi` — database khusus modul Absensi (terpisah karena high-concurrency, lihat ARCHITECTURE.md §2)
 
 Kalau belum ada, buat manual:
 ```powershell
-docker exec postgres psql -U laravel -d postgres -c "CREATE DATABASE eduzone_saas;"
+docker exec postgres psql -U laravel -d postgres -c "CREATE DATABASE eduzone;"
 docker exec postgres psql -U laravel -d postgres -c "CREATE DATABASE eduzone_absensi;"
 ```
 (pakai `-d postgres` supaya psql connect ke database default dulu, bukan ke database bernama sama dengan usernya)
@@ -68,9 +68,20 @@ Isi/pastikan bagian ini benar (sesuaikan `DB_HOST`/`REDIS_HOST` dengan nama cont
 DB_CONNECTION=pgsql
 DB_HOST=postgres
 DB_PORT=5432
-DB_DATABASE=eduzone_saas
+DB_DATABASE=eduzone
 DB_USERNAME=laravel
 DB_PASSWORD=secret123
+
+# --- Koneksi DB kedua untuk modul Absensi (JANGAN skip meskipun modulnya
+#     belum dipakai sekarang — ada 19 migration file yang pakai connection
+#     `pgsql_absensi`, jadi `php artisan migrate` akan gagal kalau koneksi
+#     ini tidak bisa terkoneksi / database belum ada) ---
+DB_ABSENSI_CONNECTION=pgsql_absensi
+DB_ABSENSI_HOST=postgres
+DB_ABSENSI_PORT=5432
+DB_ABSENSI_DATABASE=eduzone_absensi
+DB_ABSENSI_USERNAME=laravel
+DB_ABSENSI_PASSWORD=secret123
 
 QUEUE_CONNECTION=redis
 CACHE_STORE=redis
@@ -92,6 +103,27 @@ VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
 VITE_REVERB_HOST="${REVERB_HOST}"
 VITE_REVERB_PORT="${REVERB_PORT}"
 VITE_REVERB_SCHEME="${REVERB_SCHEME}"
+
+# --- Integrasi dengan absensi-gateway (Go) ---
+# (Wajib diisi sebelum `php artisan migrate` / menjalankan Health Check
+#  Absensi di dashboard superadmin. Isi dengan random string kamu sendiri
+#  untuk dev lokal, kecuali base_url di bawah — biasanya sudah benar default-nya
+#  kalau absensi-gateway jalan di docker compose bareng network `network`.)
+
+# Base URL Go Gateway (nama container Docker absensi-gateway + port internal 8080)
+ABSENSI_GATEWAY_BASE_URL=http://absensi-gateway-absensi-gateway-1:8080
+
+# Shared-secret HS256 JWT untuk check-in guru via HP (harus identik dengan
+# JWT_SECRET di .env milik absensi-gateway) — boleh dikosongkan dulu kalau
+# modul check-in guru via HP belum dipakai di dev lokal.
+ABSENSI_GATEWAY_JWT_SECRET=
+ABSENSI_GATEWAY_JWT_TTL=900
+
+# Token server-to-server untuk endpoint sync (Go pull data master dari Laravel
+# lewat /api/internal/sync/*). Middleware VerifySyncToken reject semua request
+# kalau ini kosong. Harus identik dengan LARAVEL_SYNC_TOKEN di .env gateway.
+# Isi dengan random string 32+ karakter.
+ABSENSI_SYNC_TOKEN=
 ```
 
 > **Kesalahan paling sering:** `DB_HOST`/`REDIS_HOST` diisi `127.0.0.1` atau `localhost`. Ini salah — di dalam container, nama host harus nama **container lain** (`postgres`, `redis`), bukan alamat diri sendiri.
@@ -150,7 +182,7 @@ Ini menjalankan seeder secara berurutan (Role → Superadmin → School, dst) se
 - Web: **http://localhost:8083**
 - Vite dev server (hot reload): port `5174`
 - Reverb (WebSocket): port `8082`
-- Adminer (lihat isi database lewat browser): **http://localhost:8081** — server: `postgres` (atau nama container Postgres di komputermu), user: `laravel`, database: `eduzone_saas`
+- Adminer (lihat isi database lewat browser): **http://localhost:8081** — server: `postgres` (atau nama container Postgres di komputermu), user: `laravel`, database: `eduzone` (utama) atau `eduzone_absensi` (modul Absensi)
 
 ---
 

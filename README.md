@@ -98,7 +98,7 @@ AuthUserTenantFinder
 | Layer | Teknologi | Versi |
 |---|---|---|
 | Framework | Laravel | 11.x |
-| PHP | PHP | 8.3 |
+| PHP | PHP | 8.2+ (Dockerfile build dengan 8.3) |
 | Database | PostgreSQL | 16 |
 | Cache / Session / Queue | Redis | latest |
 | Web Server | Nginx | 1.27-alpine |
@@ -121,16 +121,27 @@ eduzone/
 ├── app/
 │   ├── Http/
 │   │   ├── Controllers/
+│   │   │   ├── Api/
+│   │   │   │   └── SyncController.php   # 3 endpoint internal sync pull (schools/people/schedules) untuk absensi-gateway Go
 │   │   │   ├── Auth/                    # Login, Dashboard router tenant
+│   │   │   ├── Kiosk/
+│   │   │   │   └── CheckInController.php # Render halaman kiosk device absensi (RFID/QR/Face)
 │   │   │   └── Superadmin/             # Semua controller superadmin
 │   │   │       ├── Auth/               # Login/logout superadmin
-│   │   │       └── DashboardController.php
+│   │   │       ├── DashboardController.php
+│   │   │       ├── SchoolController.php        # CRUD sekolah
+│   │   │       ├── SubscriptionController.php  # CRUD langganan
+│   │   │       ├── UserController.php          # List user lintas sekolah
+│   │   │       ├── DeviceController.php        # CRUD device absensi + regenerate-key
+│   │   │       ├── AbsensiHealthController.php # Dashboard health gateway/DB/sync per sekolah
+│   │   │       └── ActivityLogController.php   # Log aktivitas superadmin
 │   │   └── Middleware/
-│   │       ├── InitializeTenancy.php   # Set search_path + tenant
+│   │       ├── InitializeTenancy.php   # Set search_path PostgreSQL + tenant
 │   │       ├── RoleMiddleware.php      # Cek role user
 │   │       ├── EnsureUserIsActive.php  # Cek is_active
-│   │       └── SuperadminOnly.php      # Guard superadmin area
-│   ├── Models/                         # 39 Eloquent models
+│   │       ├── SuperadminOnly.php      # Guard superadmin area
+│   │       └── VerifySyncToken.php     # Verifikasi header X-Sync-Token dari absensi-gateway
+│   ├── Models/                         # 50+ Eloquent models (DB utama + 17 model modul Absensi di app/Models/Absensi/)
 │   ├── Multitenancy/
 │   │   ├── Concerns/
 │   │   │   └── BelongsToSchool.php     # Trait untuk semua model tenant
@@ -138,11 +149,15 @@ eduzone/
 │   │   │   └── SchoolScope.php         # Global scope filter school_id
 │   │   └── TenantFinder/
 │   │       └── AuthUserTenantFinder.php
-│   └── Providers/
-│       └── AppServiceProvider.php      # Set search_path PostgreSQL
+│   ├── Providers/
+│   │   └── AppServiceProvider.php      # Set search_path PostgreSQL
+│   └── Services/
+│       ├── EncryptionGrpcService.php   # gRPC client ke Rust encryption service (ext-grpc ditunda di Dockerfile)
+│       └── Absensi/
+│           └── HealthCheckService.php  # Cek health gateway/DB/sync/freshness data per sekolah (cached 30s)
 │
 ├── database/
-│   ├── migrations/                     # 39 migration files
+│   ├── migrations/                     # 68 migration files (000001 cache/jobs → 000001-000043 DB utama → 000044-000062 modul Absensi → telescope/sessions)
 │   └── seeders/
 │       ├── DatabaseSeeder.php
 │       ├── RoleSeeder.php
@@ -151,37 +166,54 @@ eduzone/
 │
 ├── resources/
 │   ├── css/app.css
-│   ├── js/app.js
+│   ├── js/
+│   │   ├── app.js
+│   │   └── areas/
+│   │       ├── superadmin.js   # Entry semua halaman /superadmin/*
+│   │       ├── tenant.js       # Entry semua halaman tenant role sekolah
+│   │       └── kiosk.js        # Entry layar kiosk device absensi (minimal, tanpa Alpine)
 │   └── views/
 │       ├── welcome.blade.php           # Landing page
 │       ├── auth/
 │       │   └── login.blade.php         # Login tenant
+│       ├── kiosk/
+│       │   └── checkin.blade.php       # Layar kiosk RFID/QR/Face device
 │       ├── superadmin/
 │       │   ├── auth/login.blade.php    # Login superadmin (dark theme)
 │       │   ├── layouts/app.blade.php   # Layout superadmin
-│       │   └── dashboard/index.blade.php
-│       └── tenant/                     # Dashboard per role (segera)
-│           ├── kepsek/
-│           ├── guru/
-│           ├── siswa/
-│           └── ...
+│       │   ├── dashboard/index.blade.php
+│       │   ├── absensi/
+│       │   │   ├── health.blade.php    # Health check dashboard Absensi
+│       │   │   └── devices/            # CRUD device absensi (index/create/edit)
+│       │   ├── schools/                # CRUD sekolah
+│       │   ├── subscriptions/          # CRUD langganan
+│       │   ├── logs/index.blade.php    # Activity logs
+│       │   └── users/index.blade.php
+│       └── tenant/                     # Dashboard per role
+│           ├── layouts/app.blade.php   # Shared layout untuk semua tenant
+│           ├── absensi/dashboard.blade.php # Dashboard absensi Wali Kelas
+│           ├── kepsek/dashboard/index.blade.php
+│           └── guru/dashboard/index.blade.php
 │
 ├── routes/
-│   ├── web.php                         # Public + tenant auth
-│   ├── tenant.php                      # Dashboard routes per role
-│   ├── superadmin.php                  # Semua route superadmin
+│   ├── web.php                         # Public + tenant auth + dashboard router
+│   ├── tenant.php                      # Dashboard routes per role sekolah
+│   ├── superadmin.php                  # Semua route superadmin (schools, subscriptions, devices, health, logs)
+│   ├── kiosk.php                       # Route halaman kiosk device absensi (tanpa auth/tenant middleware)
+│   ├── sync.php                        # 3 endpoint internal sync pull (tanpa session/CSRF, dilindungi X-Sync-Token)
 │   └── console.php
 │
 ├── docker/
-│   ├── nginx/default.conf
+│   ├── nginx/default.conf, default.swarm.conf
 │   ├── php/
 │   │   ├── php-fpm.conf
 │   │   ├── php-dev.ini
 │   │   └── php-prod.ini
-│   └── postgres/
-│       └── init-multiple-db.sh
+│   ├── postgres/
+│   │   └── init-multiple-db.sh
+│   └── reverb/Dockerfile               # Build image Reverb (WebSocket) service
 │
-└── bootstrap/app.php                   # Route loader + middleware alias
+└── bootstrap/app.php                   # Route loader + middleware alias (tenant, role, active, superadmin, sync.token)
 ```
 
 ---
@@ -749,6 +781,7 @@ Route::middleware('superadmin')->group(...);
 | `tenant` | Set `search_path` PostgreSQL + inisialisasi tenant |
 | `role:xxx` | Cek role user, pisahkan dengan koma untuk multi-role |
 | `superadmin` | Guard khusus superadmin, redirect ke `/superadmin/login` jika belum auth |
+| `sync.token` | Verifikasi header `X-Sync-Token` untuk endpoint `/api/internal/sync/*` (server-to-server dari absensi-gateway) |
 
 ### Fitur Login
 
@@ -757,6 +790,13 @@ Route::middleware('superadmin')->group(...);
 - Update `last_login_at` setiap login sukses
 - Rate limiting pada superadmin login (5x per menit per IP)
 - Session regenerate setelah login untuk mencegah session fixation
+
+### Route Khusus di Luar Middleware Auth/Tenant
+
+| Route File | Middleware | Karakteristik |
+|---|---|---|
+| `routes/sync.php` | `sync.token` SAJA (tanpa `web`, tanpa session/CSRF) | Server-to-server: 3 endpoint pull data master untuk absensi-gateway (`/api/internal/sync/schools`, `/people`, `/schedules`) |
+| `routes/kiosk.php` | `web` (session) tapi TANPA `auth`/`tenant` | Render halaman kiosk device fisik (`/kiosk/{deviceCode}`) — identitas sekolah didapat dari kode device, bukan dari user login |
 
 ---
 
@@ -950,11 +990,14 @@ routes/
 ├── web.php          # Landing page, login/logout tenant, /dashboard router
 ├── tenant.php       # Semua route per role tenant (diload via bootstrap/app.php)
 ├── superadmin.php   # Semua route superadmin (prefix: /superadmin)
+├── kiosk.php        # Halaman kiosk device absensi GET /kiosk/{deviceCode} (tanpa auth/tenant — identitas dari deviceCode)
+├── sync.php         # 3 endpoint internal sync pull untuk absensi-gateway (prefix: /api/internal/sync, middleware sync.token: X-Sync-Token, TANPA session/CSRF)
 └── console.php      # Artisan commands
 
 # Prefix otomatis dari bootstrap/app.php:
 # - superadmin.php → /superadmin/* dengan name superadmin.*
 # - tenant.php     → /* tanpa prefix tambahan
+# - sync.php       → /api/internal/sync/* dengan middleware sync.token
 ```
 
 ### Contoh Struktur Route Tenant
@@ -973,6 +1016,11 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::resource('grades', GuruGradeController::class);
     });
 
+    // Dashboard absensi Wali Kelas — sudah aktif:
+    Route::middleware('role:wali_kelas')->group(function () {
+        Route::get('/absensi', [WaliKelas\AbsensiController::class, 'dashboard'])
+            ->name('wali_kelas.absensi.dashboard');
+    });
 });
 ```
 
@@ -987,6 +1035,9 @@ resources/views/
 ├── auth/
 │   └── login.blade.php            # Login tenant (indigo-pink gradient)
 │
+├── kiosk/
+│   └── checkin.blade.php          # Layar kiosk device absensi (RFID/QR/Face) — entry kiosk.js
+│
 ├── superadmin/
 │   ├── auth/
 │   │   └── login.blade.php        # Login superadmin (dark theme)
@@ -995,20 +1046,33 @@ resources/views/
 │   ├── dashboard/
 │   │   └── index.blade.php
 │   ├── schools/
-│   │   └── index.blade.php
+│   │   ├── index.blade.php        # CRUD sekolah (list + form)
+│   │   ├── create.blade.php
+│   │   └── edit.blade.php
+│   ├── subscriptions/
+│   │   ├── index.blade.php        # CRUD langganan (list + form)
+│   │   ├── create.blade.php
+│   │   └── edit.blade.php
+│   ├── absensi/
+│   │   ├── health.blade.php       # Dashboard health: gateway/DB/sync/freshness per sekolah
+│   │   └── devices/               # CRUD device absensi (index/create/edit)
+│   │       ├── index.blade.php
+│   │       ├── create.blade.php
+│   │       └── edit.blade.php
+│   ├── logs/
+│   │   └── index.blade.php        # Activity log superadmin
 │   └── users/
-│       └── index.blade.php
+│       └── index.blade.php        # List user lintas sekolah
 │
 └── tenant/
     ├── layouts/
     │   └── app.blade.php          # Shared layout untuk semua tenant
+    ├── absensi/
+    │   └── dashboard.blade.php    # Dashboard absensi Wali Kelas
     ├── kepsek/
     │   └── dashboard/
     │       └── index.blade.php
     ├── guru/
-    │   └── dashboard/
-    │       └── index.blade.php
-    ├── siswa/
     │   └── dashboard/
     │       └── index.blade.php
     └── shared/
