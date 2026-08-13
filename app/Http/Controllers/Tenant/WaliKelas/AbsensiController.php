@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Tenant\WaliKelas;
 
 use App\Http\Controllers\Controller;
-use App\Models\Absensi\AttendanceDaily;
+use App\Models\Absensi\AttendanceEvent;
 use App\Models\Absensi\PeopleRef;
 use App\Models\HomeroomAssignment;
 use App\Models\SchoolClass;
@@ -12,20 +12,24 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 /**
- * Dashboard absensi harian untuk wali kelas — lihat status hadir/terlambat/
- * izin/sakit/alpa/belum-absen semua siswa di kelas yang dia pegang, hari ini.
+ * Dashboard absensi harian untuk wali kelas — status hadir hari ini per
+ * siswa di kelas yang dia pegang.
+ *
+ * CATATAN SCOPE (per keputusan — query langsung attendance_events, belum
+ * ada job sync attendance_daily): status yang bisa ditentukan cuma
+ * "Hadir" (ada event check_in hari ini) vs "Belum Absen". Status
+ * Izin/Sakit/Alpa/Terlambat TIDAK bisa diturunkan dari attendance_events —
+ * event_type di tabel ini cuma check_in/check_out/unknown (lihat CHECK
+ * constraint migration), tidak ada kategori administratif semacam itu.
+ * Begitu modul izin/sakit manual atau job sync attendance_daily ada,
+ * dashboard ini perlu direvisi buat menggabungkan sumber data itu.
  *
  * Alur resolve "kelas mana yang dipegang wali kelas ini":
  *   User (login) -> Teacher (via user_id) -> HomeroomAssignment aktif
  *   (via teacher_id) -> class_id
- * BUKAN lewat kolom langsung di users (draft sebelumnya salah asumsi soal
- * ini) — homeroom_assignments adalah sumber kebenarannya, dan sengaja
- * dipisah dari teachers.is_homeroom (boolean) karena satu guru secara
- * teori bisa punya riwayat homeroom di tahun ajaran berbeda.
  *
- * people_ref & attendance_daily ada di database terpisah (pgsql_absensi,
- * lihat SKILL.md). person_type di kedua tabel itu pakai 'student' (BUKAN
- * 'siswa') — CHECK constraint di DB cuma terima 'student'/'teacher'/'staff'.
+ * people_ref & attendance_events ada di database terpisah (pgsql_absensi).
+ * person_type di kedua tabel itu pakai 'student' (BUKAN 'siswa').
  */
 class AbsensiController extends Controller
 {
@@ -64,7 +68,7 @@ class AbsensiController extends Controller
         $class = SchoolClass::find($assignment->class_id);
 
         // people_ref PAKAI composite primary key (person_id, person_type) —
-        // JANGAN ::find(), selalu where() (lihat SKILL.md).
+        // JANGAN ::find(), selalu where().
         $studentsInClass = PeopleRef::where('school_id', $schoolId)
             ->where('person_type', 'student')
             ->where('class_id', $assignment->class_id)
@@ -74,31 +78,37 @@ class AbsensiController extends Controller
 
         $studentIds = $studentsInClass->pluck('person_id');
 
-        $dailyRecords = AttendanceDaily::where('school_id', $schoolId)
+        // Ambil semua event hari ini buat siswa-siswa di kelas ini, urut
+        // waktu — supaya firstWhere('event_type', 'check_in') di bawah
+        // otomatis dapat tap PALING AWAL kalau ada beberapa check_in
+        // (misal tap ulang karena gagal pertama kali).
+        $events = AttendanceEvent::where('school_id', $schoolId)
             ->where('person_type', 'student')
-            ->where('date', $today->toDateString())
             ->whereIn('person_id', $studentIds)
-            ->get()
-            ->keyBy('person_id');
+            ->whereBetween('recorded_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
+            ->orderBy('recorded_at')
+            ->get();
 
-        $records = $studentsInClass->map(function ($student) use ($dailyRecords) {
-            $daily = $dailyRecords->get($student->person_id);
+        $eventsByStudent = $events->groupBy('person_id');
+
+        $records = $studentsInClass->map(function ($student) use ($eventsByStudent) {
+            $studentEvents = $eventsByStudent->get($student->person_id, collect());
+            $checkIn = $studentEvents->firstWhere('event_type', 'check_in');
+            $hasAnomaly = $studentEvents->contains(fn ($e) => ! $e->is_valid || $e->flagged_reason);
 
             return [
                 'nama' => $student->full_name,
-                'waktu' => $daily?->first_check_in ? Carbon::parse($daily->first_check_in)->format('H:i') : null,
-                'metode' => $this->formatMetode($daily?->primary_method),
-                'status' => $daily?->status ?? 'Belum Absen',
-                'has_anomaly' => (bool) ($daily?->has_anomaly ?? false),
+                'waktu' => $checkIn?->recorded_at?->format('H:i'),
+                'metode' => $this->formatMetode($checkIn?->method),
+                'status' => $checkIn ? 'Hadir' : 'Belum Absen',
+                'has_anomaly' => $hasAnomaly,
             ];
         })->values();
 
         $stats = [
             'hadir' => $records->where('status', 'Hadir')->count(),
-            'terlambat' => $records->where('status', 'Terlambat')->count(),
-            'izin' => $records->whereIn('status', ['Izin', 'Sakit'])->count(),
-            'alpa' => $records->where('status', 'Alpa')->count(),
             'belum' => $records->where('status', 'Belum Absen')->count(),
+            'anomali' => $records->where('has_anomaly', true)->count(),
         ];
 
         return view('tenant.absensi.dashboard', [
@@ -116,6 +126,7 @@ class AbsensiController extends Controller
             'rfid' => 'RFID',
             'qr' => 'QR',
             'face' => 'Wajah',
+            'fingerprint' => 'Sidik Jari',
             'manual' => 'Manual',
             default => $metode,
         };
