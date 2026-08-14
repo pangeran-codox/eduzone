@@ -33,22 +33,11 @@
 
         body { background-color: var(--t-bg); color: var(--t-text); }
 
-        .sidebar {
-            background: var(--t-dark);
-            width: 250px;
-            flex-shrink: 0;
-        }
+        .sidebar { background: var(--t-dark); width: 250px; flex-shrink: 0; }
         .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 9px 14px;
-            border-radius: 8px;
-            font-size: 13.5px;
-            font-weight: 500;
-            color: #9FB8AE;
-            transition: all 0.18s ease;
-            text-decoration: none;
+            display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+            border-radius: 8px; font-size: 13.5px; font-weight: 500;
+            color: #9FB8AE; transition: all 0.18s ease; text-decoration: none;
         }
         .nav-item:hover { color: #F6F3EC; background: rgba(255,255,255,0.06); }
         .nav-item.active { color: var(--t-dark); background: var(--t-gold); font-weight: 600; }
@@ -115,8 +104,46 @@
     <nav class="flex-1 px-3 py-4">
         <p class="nav-section">Menu</p>
 
-        @if (Route::has('guru.dashboard'))
-        <a href="{{ route('guru.dashboard') }}" class="nav-item {{ request()->routeIs('guru.dashboard') ? 'active' : '' }}">
+        {{--
+            Dashboard nav item ditentukan dari role user yang login, BUKAN
+            hardcode ke route tertentu — sebelumnya semua role diarahkan ke
+            guru.dashboard (bug, nyebabin 403 buat role selain guru/wali
+            kelas). Dashboard utama role ini selalu tampil duluan (walau
+            route lain di sekolah ini belum semua ada); route lain baru
+            muncul kalau Route::has() true, biar aman dipakai semua role.
+        --}}
+        @php
+            $role = auth()->user()->role ?? null;
+
+            $roleDashboardRoute = match ($role) {
+                'kepsek'              => 'kepsek.dashboard',
+                'kurikulum'           => 'kurikulum.dashboard',
+                'tu'                  => 'tu.dashboard',
+                'guru_mapel',
+                'wali_kelas'          => 'guru.dashboard',
+                'kesiswaan'           => 'kesiswaan.dashboard',
+                'bk'                  => 'bk.dashboard',
+                'toolman'             => 'toolman.dashboard',
+                'siswa'               => 'siswa.dashboard',
+                default               => null,
+            };
+
+            $roleLabel = match ($role) {
+                'kepsek'      => 'Kepala Sekolah',
+                'kurikulum'   => 'Kurikulum',
+                'tu'          => 'Tata Usaha',
+                'guru_mapel'  => 'Guru Mapel',
+                'wali_kelas'  => 'Wali Kelas',
+                'kesiswaan'   => 'Kesiswaan',
+                'bk'          => 'BK',
+                'toolman'     => 'Toolman',
+                'siswa'       => 'Siswa',
+                default       => 'Pengguna',
+            };
+        @endphp
+
+        @if ($roleDashboardRoute && Route::has($roleDashboardRoute))
+        <a href="{{ route($roleDashboardRoute) }}" class="nav-item {{ request()->routeIs($roleDashboardRoute) ? 'active' : '' }}">
             <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/>
             </svg>
@@ -124,7 +151,7 @@
         </a>
         @endif
 
-        @if (auth()->user()->role === 'wali_kelas' && Route::has('wali_kelas.absensi.dashboard'))
+        @if ($role === 'wali_kelas' && Route::has('wali_kelas.absensi.dashboard'))
         <a href="{{ route('wali_kelas.absensi.dashboard') }}" class="nav-item {{ request()->routeIs('wali_kelas.absensi.dashboard') ? 'active' : '' }}">
             <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
@@ -132,6 +159,18 @@
             Absensi Kelas
         </a>
         @endif
+
+        @if (in_array($role, ['kepsek', 'tu']) && Route::has('absensi.rekap.index'))
+        <a href="{{ route('absensi.rekap.index') }}" class="nav-item {{ request()->routeIs('absensi.rekap.index') ? 'active' : '' }}">
+            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+            </svg>
+            Rekap Absensi
+        </a>
+        @endif
+
+        {{-- Slot buat nav item tambahan spesifik per-role, tanpa harus edit layout ini lagi --}}
+        @stack('nav-items')
     </nav>
 
     <div class="px-3 py-4 border-t" style="border-color: rgba(255,255,255,0.08);">
@@ -142,7 +181,7 @@
             </div>
             <div class="flex-1 min-w-0">
                 <p class="text-xs font-semibold truncate" style="color:#F6F3EC;">{{ auth()->user()->username ?? auth()->user()->email }}</p>
-                <p class="text-xs truncate" style="color:#9FB8AE;">Wali Kelas</p>
+                <p class="text-xs truncate" style="color:#9FB8AE;">{{ $roleLabel }}</p>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf

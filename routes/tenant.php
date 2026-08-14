@@ -69,6 +69,11 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         })->name('dashboard');
     });
 
+    Route::middleware('role:kepsek,tu')->group(function () {
+    Route::get('/absensi/rekap', [\App\Http\Controllers\Tenant\Absensi\RekapController::class, 'index'])
+        ->name('absensi.rekap.index');
+});
+
     Route::middleware('role:wali_kelas')->group(function () {
     Route::get('/absensi', [\App\Http\Controllers\Tenant\WaliKelas\AbsensiController::class, 'dashboard'])
         ->name('wali_kelas.absensi.dashboard');
