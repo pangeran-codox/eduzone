@@ -142,6 +142,16 @@
             };
         @endphp
 
+        @if (Route::has('absen-hp.show'))
+        <a href="{{ route('absen-hp.show') }}" class="nav-item {{ request()->routeIs('absen-hp.show') ? 'active' : '' }}">
+            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.5-7.5 11.25-7.5 11.25S4.5 18 4.5 10.5a7.5 7.5 0 1115 0z" />
+            </svg>
+            Absen HP
+        </a>
+        @endif
+
         @if ($roleDashboardRoute && Route::has($roleDashboardRoute))
         <a href="{{ route($roleDashboardRoute) }}" class="nav-item {{ request()->routeIs($roleDashboardRoute) ? 'active' : '' }}">
             <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -166,6 +176,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
             </svg>
             Rekap Absensi
+        </a>
+        @endif
+
+        @if (in_array($role, ['kepsek', 'tu']) && Route::has('absensi.devices.index'))
+        <a href="{{ route('absensi.devices.index') }}" class="nav-item {{ request()->routeIs('absensi.devices.*') ? 'active' : '' }}">
+            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+            </svg>
+            Device Absensi
         </a>
         @endif
 

@@ -7,13 +7,13 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Verifikasi header X-Sync-Token dari absensi-gateway (Go) untuk endpoint
- * internal/sync/*. SENGAJA pakai shared-secret TERPISAH dari JWT_SECRET
- * (guru login) - lihat docs/laravel-sync-contract.md di repo absensi-gateway:
- * kalau salah satu bocor, yang lain tidak ikut kena.
+ * Verifikasi header X-Sync-Token dari absensi-gateway terhadap
+ * ABSENSI_SYNC_TOKEN di .env — HARUS SAMA PERSIS dengan LARAVEL_SYNC_TOKEN
+ * di .env gateway. Ini shared-secret KHUSUS server-to-server sync,
+ * sengaja terpisah dari ABSENSI_GATEWAY_JWT_SECRET (dipakai untuk token
+ * login guru) — kalau salah satu bocor, yang lain tidak ikut kena.
  *
- * Endpoint ini server-to-server (Go -> Laravel), bukan diakses browser -
- * tidak butuh CSRF, tidak butuh session/cookie.
+ * Pakai hash_equals(), bukan ===, supaya tidak rentan timing attack.
  */
 class VerifySyncToken
 {
@@ -22,7 +22,7 @@ class VerifySyncToken
         $expected = config('services.absensi_gateway.sync_token');
         $given = $request->header('X-Sync-Token', '');
 
-        if (! $expected || ! hash_equals((string) $expected, (string) $given)) {
+        if (! $expected || ! hash_equals($expected, $given)) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 

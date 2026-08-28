@@ -10,10 +10,24 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Terminal absensi fisik: kamera face-recognition, RFID reader, QR scanner,
  * hybrid, atau manual kiosk. id di-generate lokal (bukan sync dari DB utama).
+ *
+ * capabilities: array metode check-in yang aktif di device ini (subset dari
+ * CAPABILITIES di bawah) — SUMBER KEBENARAN. device_type adalah LABEL yang
+ * diturunkan otomatis dari capabilities (lihat deriveDeviceType()), jangan
+ * di-set manual dari form lagi supaya tidak ada dua sumber yang bisa
+ * tidak sinkron.
  */
 class Device extends Model
 {
     use HasUuids;
+
+    public const CAPABILITIES = [
+        'rfid' => 'RFID',
+        'qr' => 'QR Code',
+        'face' => 'Wajah',
+        'fingerprint' => 'Sidik Jari',
+        'manual' => 'Input Manual (NIS/NIP)',
+    ];
 
     protected $connection = 'pgsql_absensi';
     protected $table = 'devices';
@@ -26,6 +40,7 @@ class Device extends Model
         'device_code',
         'name',
         'device_type',
+        'capabilities',
         'location',
         'default_class_id',
         'ip_address',
@@ -35,6 +50,7 @@ class Device extends Model
     ];
 
     protected $casts = [
+        'capabilities' => 'array',
         'is_active' => 'boolean',
         'last_seen_at' => 'datetime',
     ];
@@ -57,5 +73,27 @@ class Device extends Model
     public function qrTokens(): HasMany
     {
         return $this->hasMany(QrToken::class, 'device_id');
+    }
+
+    /**
+     * Turunkan label device_type dari daftar capabilities — dipanggil dari
+     * controller saat store()/update(), bukan diisi manual dari form.
+     * fingerprint tunggal -> fingerprint_reader (butuh migration yang
+     * menambahkan value ini ke CHECK constraint, lihat
+     * 2026_08_16_000001_add_capabilities_to_devices_table).
+     */
+    public static function deriveDeviceType(array $capabilities): string
+    {
+        sort($capabilities);
+
+        return match (true) {
+            count($capabilities) === 0 => 'manual_kiosk',
+            $capabilities === ['face'] => 'face_camera',
+            $capabilities === ['rfid'] => 'rfid_reader',
+            $capabilities === ['qr'] => 'qr_scanner',
+            $capabilities === ['fingerprint'] => 'fingerprint_reader',
+            $capabilities === ['manual'] => 'manual_kiosk',
+            default => 'hybrid',
+        };
     }
 }

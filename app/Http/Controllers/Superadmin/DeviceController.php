@@ -8,34 +8,33 @@ use App\Http\Requests\Superadmin\Absensi\UpdateDeviceRequest;
 use App\Models\Absensi\Device;
 use App\Models\Absensi\SchoolRef;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class DeviceController extends Controller
 {
-    /**
-     * Tipe device yang diizinkan — HARUS sinkron persis dengan CHECK
-     * constraint "devices_device_type_check" di database (lihat SKILL.md
-     * gotcha soal ini, 'rfid' bukan value valid, gampang salah tebak).
-     */
-    private const DEVICE_TYPES = [
-        'face_camera' => 'Kamera Wajah',
-        'rfid_reader' => 'RFID Reader',
-        'qr_scanner' => 'QR Scanner',
-        'hybrid' => 'Hybrid (RFID + QR)',
-        'manual_kiosk' => 'Kiosk Manual',
-    ];
-
-    public function index(): View
+    public function index(\Illuminate\Http\Request $request): View
     {
-        $devices = Device::orderBy('name')->get();
-        $schools = SchoolRef::pluck('name', 'school_id');
+        $devices = Device::query()
+            ->when($request->filled('school'), fn ($q) => $q->where('school_id', $request->input('school')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%'.$request->input('search').'%';
+                $q->where(function ($sub) use ($term) {
+                    $sub->where('name', 'ilike', $term)
+                        ->orWhere('device_code', 'ilike', $term);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(15)
+            ->withQueryString();
+
+        $schools = SchoolRef::orderBy('name')->pluck('name', 'school_id');
 
         return view('superadmin.absensi.devices.index', [
             'devices' => $devices,
             'schools' => $schools,
-            'deviceTypes' => self::DEVICE_TYPES,
+            'search' => $request->input('search', ''),
+            'schoolFilter' => $request->input('school', ''),
         ]);
     }
 
@@ -43,23 +42,23 @@ class DeviceController extends Controller
     {
         return view('superadmin.absensi.devices.create', [
             'schools' => SchoolRef::orderBy('name')->pluck('name', 'school_id'),
-            'deviceTypes' => self::DEVICE_TYPES,
+            'capabilityOptions' => Device::CAPABILITIES,
         ]);
     }
 
     public function store(StoreDeviceRequest $request): RedirectResponse
     {
-        $rawKey = Str::random(32);
+        $data = $request->validated();
+        $data['device_type'] = Device::deriveDeviceType($data['capabilities']);
 
-        $device = Device::create([
-            ...$request->validated(),
-            'api_key_hash' => hash('sha256', $rawKey),
-            'is_active' => true,
-        ]);
+        $rawKey = Str::random(32);
+        $data['api_key_hash'] = hash('sha256', $rawKey);
+        $data['is_active'] = true;
+
+        $device = Device::create($data);
 
         // Key mentah CUMA ditampilkan sekali di sini (flash session), tidak
-        // pernah disimpan plain di database — sama seperti generate manual
-        // yang sebelumnya dilakukan lewat tinker.
+        // pernah disimpan plain di database.
         return redirect()
             ->route('superadmin.absensi.devices.index')
             ->with('generated_key', $rawKey)
@@ -71,13 +70,16 @@ class DeviceController extends Controller
         return view('superadmin.absensi.devices.edit', [
             'device' => $device,
             'schools' => SchoolRef::orderBy('name')->pluck('name', 'school_id'),
-            'deviceTypes' => self::DEVICE_TYPES,
+            'capabilityOptions' => Device::CAPABILITIES,
         ]);
     }
 
     public function update(UpdateDeviceRequest $request, Device $device): RedirectResponse
     {
-        $device->update($request->validated());
+        $data = $request->validated();
+        $data['device_type'] = Device::deriveDeviceType($data['capabilities']);
+
+        $device->update($data);
 
         return redirect()
             ->route('superadmin.absensi.devices.index')

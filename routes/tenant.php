@@ -118,5 +118,21 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
     Route::get('/absensi/health', [AbsensiHealthController::class, 'status'])
     ->name('tenant.absensi.health.status');
 
+    // ── Absen HP (semua role — guru, staff, siswa) ──────────────────────
+    Route::get('/absen-hp', [\App\Http\Controllers\Tenant\Absensi\AbsenHpController::class, 'show'])
+        ->name('absen-hp.show');
+    Route::post('/absen-hp', [\App\Http\Controllers\Tenant\Absensi\AbsenHpController::class, 'store'])
+        ->name('absen-hp.store');
+
+    // ── Device Absensi (kepsek & TU kelola device milik sekolah sendiri) ─
+    Route::prefix('absensi/devices')->name('absensi.devices.')->middleware('role:kepsek,tu')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'index'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'store'])->name('store');
+        Route::get('/{device}/edit', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'edit'])->name('edit');
+        Route::put('/{device}', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'update'])->name('update');
+        Route::delete('/{device}', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'destroy'])->name('destroy');
+        Route::post('/{device}/regenerate-key', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'regenerateKey'])->name('regenerate-key');
+    });
 
 });

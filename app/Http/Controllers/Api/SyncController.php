@@ -67,6 +67,10 @@ class SyncController extends Controller
             ? Carbon::parse($request->query('updated_since'))
             : null;
 
+        // ASUMSI (perlu dikonfirmasi terhadap data asli): kolom `status` di
+        // `students` berisi string 'aktif' untuk siswa aktif. Kalau ternyata
+        // beda (mis. 'active', atau pakai kolom is_active terpisah), cukup
+        // ganti baris DB::raw di bawah ini saja.
         $students = DB::table('students')
             ->select([
                 'id as person_id',
@@ -81,6 +85,10 @@ class SyncController extends Controller
             ])
             ->when($updatedSince, fn ($q) => $q->where('updated_at', '>', $updatedSince));
 
+        // Cast eksplisit ::uuid / ::varchar pada NULL literal - defensif
+        // terhadap Postgres yang kadang menolak UNION kalau tipe kolom
+        // "unknown" (NULL literal tanpa cast) dipasangkan dengan kolom
+        // bertipe uuid/varchar eksplisit dari cabang lain (students).
         $teachers = DB::table('teachers')
             ->select([
                 'id as person_id',
@@ -88,8 +96,8 @@ class SyncController extends Controller
                 DB::raw("'teacher' as person_type"),
                 'full_name',
                 'photo',
-                DB::raw('NULL as class_id'),
-                DB::raw('NULL as grade'),
+                DB::raw('NULL::uuid as class_id'),
+                DB::raw('NULL::varchar as grade'),
                 'is_active',
                 'updated_at',
             ])
@@ -102,8 +110,8 @@ class SyncController extends Controller
                 DB::raw("'staff' as person_type"),
                 'full_name',
                 'photo',
-                DB::raw('NULL as class_id'),
-                DB::raw('NULL as grade'),
+                DB::raw('NULL::uuid as class_id'),
+                DB::raw('NULL::varchar as grade'),
                 'is_active',
                 'updated_at',
             ])
@@ -137,9 +145,8 @@ class SyncController extends Controller
     public function schedules(Request $request): JsonResponse
     {
         // Peta nama hari Indonesia -> ISO 8601 (1=Senin .. 7=Minggu), sesuai
-        // yang diwajibkan kontrak. HARUS persis 7 kunci ini - kalau ada
-        // variasi penulisan lain di data (mis. "senin" huruf kecil), tambah
-        // normalisasi di sini, jangan di tempat lain.
+        // yang diwajibkan kontrak. ASUMSI (perlu dikonfirmasi): kolom `day`
+        // di Schedule berisi string persis salah satu dari 7 kunci ini.
         $dayMap = [
             'Senin' => 1, 'Selasa' => 2, 'Rabu' => 3, 'Kamis' => 4,
             'Jumat' => 5, 'Sabtu' => 6, 'Minggu' => 7,

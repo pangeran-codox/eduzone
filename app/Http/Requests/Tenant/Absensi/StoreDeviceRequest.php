@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Requests\Superadmin\Absensi;
+namespace App\Http\Requests\Tenant\Absensi;
 
 use App\Models\Absensi\Device;
 use Illuminate\Foundation\Http\FormRequest;
@@ -10,24 +10,27 @@ class StoreDeviceRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Otorisasi sudah ditangani middleware 'superadmin' di route.
-        return true;
+        return true; // role:kepsek,tu sudah dicek middleware route
     }
 
     public function rules(): array
     {
+        $schoolId = $this->user()->school_id;
+
         return [
-            'school_id' => ['required', 'uuid', 'exists:pgsql_absensi.schools_ref,school_id'],
             'device_code' => [
                 'required', 'string', 'max:50',
                 Rule::unique('pgsql_absensi.devices', 'device_code')
-                    ->where(fn ($query) => $query->where('school_id', $this->input('school_id'))),
+                    ->where(fn ($q) => $q->where('school_id', $schoolId)),
             ],
             'name' => ['required', 'string', 'max:255'],
             'capabilities' => ['required', 'array', 'min:1'],
             'capabilities.*' => [Rule::in(array_keys(Device::CAPABILITIES))],
             'location' => ['nullable', 'string', 'max:255'],
-            'default_class_id' => ['nullable', 'uuid'],
+            'default_class_id' => [
+                'nullable', 'uuid',
+                Rule::exists('classes', 'id')->where('school_id', $schoolId),
+            ],
             'ip_address' => ['nullable', 'ip'],
         ];
     }
@@ -35,11 +38,10 @@ class StoreDeviceRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'school_id.exists' => 'Sekolah yang dipilih tidak ditemukan (belum tersinkron ke layanan absensi).',
-            'device_code.unique' => 'Kode device ini sudah dipakai di sekolah yang sama.',
+            'device_code.unique' => 'Kode device ini sudah dipakai di sekolah Anda, pakai kode lain.',
             'capabilities.required' => 'Pilih minimal 1 metode input.',
             'capabilities.min' => 'Pilih minimal 1 metode input.',
-            'default_class_id.uuid' => 'ID kelas default harus berupa UUID yang valid.',
+            'default_class_id.exists' => 'Kelas yang dipilih tidak ditemukan.',
         ];
     }
 }
