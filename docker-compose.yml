@@ -16,6 +16,7 @@ services:
       - .:/var/www/html
       - eduzone_vendor:/var/www/html/vendor
       - eduzone_node_modules:/var/www/html/node_modules
+      - C:/opt/docker/projects/services/encryption-engine/certs/server.crt:/etc/ssl/certs/encryption-server.crt:ro
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}
@@ -71,6 +72,7 @@ services:
     volumes:
       - .:/var/www/html
       - eduzone_vendor:/var/www/html/vendor
+      - C:/opt/docker/projects/services/encryption-engine/certs/server.crt:/etc/ssl/certs/encryption-server.crt:ro
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}
@@ -91,6 +93,7 @@ services:
     volumes:
       - .:/var/www/html
       - eduzone_vendor:/var/www/html/vendor
+      - C:/opt/docker/projects/services/encryption-engine/certs/server.crt:/etc/ssl/certs/encryption-server.crt:ro
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}

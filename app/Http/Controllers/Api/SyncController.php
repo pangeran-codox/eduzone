@@ -9,7 +9,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * 3 endpoint internal untuk di-jemput (pull) berkala oleh absensi-gateway
@@ -78,6 +77,7 @@ class SyncController extends Controller
                 DB::raw("'student' as person_type"),
                 'full_name',
                 'photo',
+                'photo_access_token',
                 'class_id',
                 'grade',
                 DB::raw("(status = 'aktif') as is_active"),
@@ -96,6 +96,7 @@ class SyncController extends Controller
                 DB::raw("'teacher' as person_type"),
                 'full_name',
                 'photo',
+                'photo_access_token',
                 DB::raw('NULL::uuid as class_id'),
                 DB::raw('NULL::varchar as grade'),
                 'is_active',
@@ -110,6 +111,7 @@ class SyncController extends Controller
                 DB::raw("'staff' as person_type"),
                 'full_name',
                 'photo',
+                'photo_access_token',
                 DB::raw('NULL::uuid as class_id'),
                 DB::raw('NULL::varchar as grade'),
                 'is_active',
@@ -133,7 +135,7 @@ class SyncController extends Controller
                 'school_id' => $p->school_id,
                 'person_type' => $p->person_type,
                 'full_name' => $p->full_name,
-                'photo_url' => $this->resolvePhotoUrl($p->photo),
+                'photo_url' => $this->resolvePhotoUrl($p->photo, $p->photo_access_token),
                 'class_id' => $p->class_id,
                 'grade' => $p->grade,
                 'is_active' => (bool) $p->is_active,
@@ -207,23 +209,21 @@ class SyncController extends Controller
     }
 
     /**
-     * ASUMSI (belum ada konvensi lain yang ada di project ini untuk
-     * dicontoh): kolom `photo` di students/teachers/staff berisi path
-     * relatif di disk 'public' (hasil Storage::disk('public')->put(...)),
-     * diakses lewat symlink `php artisan storage:link`. Kalau ternyata
-     * project pakai disk lain (S3, dll) atau path absolut, sesuaikan
-     * method ini SAJA - tidak ada tempat lain yang perlu diubah.
+     * Diarahkan lewat token opaque (photo_access_token), bukan URL storage
+     * langsung - lihat PersonPhotoController & HasPhotoAccessToken trait.
+     * Foto siswa/guru/staff sekarang di disk 'private_photos' (bukan
+     * 'public'), diakses hanya lewat route bertoken ini.
      *
      * Sengaja balikin null (bukan string kosong) kalau tidak ada foto,
      * sesuai kontrak - person_type dari gateway generate avatar inisial
      * SVG sendiri untuk kasus ini.
      */
-    private function resolvePhotoUrl(?string $photo): ?string
+    private function resolvePhotoUrl(?string $photo, ?string $token): ?string
     {
-        if (! $photo) {
+        if (! $photo || ! $token) {
             return null;
         }
 
-        return Storage::disk('public')->url($photo);
+        return route('media.person-photo', ['token' => $token]);
     }
 }

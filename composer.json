@@ -8,8 +8,8 @@
     "require": {
         "php": "^8.2",
         "firebase/php-jwt": "^7.1",
-        "google/protobuf": "^4.0",
-        "grpc/grpc": "^1.64",
+        "google/protobuf": "^5.36",
+        "grpc/grpc": "^1.82",
         "laravel/framework": "^11.31",
         "laravel/horizon": "^5.47",
         "laravel/reverb": "^1.11",
@@ -32,8 +32,8 @@
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/",
-            "Encryption\\": "app/Grpc/Encryption/",
-            "GPBMetadata\\": "app/Grpc/GPBMetadata/"
+            "Encryption\\": "app/Grpc/Generated/Encryption/",
+            "GPBMetadata\\": "app/Grpc/Generated/GPBMetadata/"
         }
     },
     "autoload-dev": {

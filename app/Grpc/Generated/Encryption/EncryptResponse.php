@@ -9,8 +9,6 @@ use Google\Protobuf\Internal\RepeatedField;
 use Google\Protobuf\Internal\GPBUtil;
 
 /**
- * Respon enkripsi (mengirim ciphertext dan IV untuk dekripsi nanti)
- *
  * Generated from protobuf message <code>encryption.EncryptResponse</code>
  */
 class EncryptResponse extends \Google\Protobuf\Internal\Message
@@ -23,6 +21,15 @@ class EncryptResponse extends \Google\Protobuf\Internal\Message
      * Generated from protobuf field <code>bytes iv = 2;</code>
      */
     protected $iv = '';
+    /**
+     * ID kunci yang dipakai untuk enkripsi ini. WAJIB disimpan bareng
+     * cipher_text+iv (mis. kolom terpisah di database), dan WAJIB dikirim
+     * balik saat Decrypt. Tanpa ini, rotasi kunci akan membuat data lama
+     * tidak terbaca karena server tidak tahu kunci mana yang harus dipakai.
+     *
+     * Generated from protobuf field <code>string key_id = 3;</code>
+     */
+    protected $key_id = '';
 
     /**
      * Constructor.
@@ -32,6 +39,11 @@ class EncryptResponse extends \Google\Protobuf\Internal\Message
      *
      *     @type string $cipher_text
      *     @type string $iv
+     *     @type string $key_id
+     *           ID kunci yang dipakai untuk enkripsi ini. WAJIB disimpan bareng
+     *           cipher_text+iv (mis. kolom terpisah di database), dan WAJIB dikirim
+     *           balik saat Decrypt. Tanpa ini, rotasi kunci akan membuat data lama
+     *           tidak terbaca karena server tidak tahu kunci mana yang harus dipakai.
      * }
      */
     public function __construct($data = NULL) {
@@ -79,6 +91,38 @@ class EncryptResponse extends \Google\Protobuf\Internal\Message
     {
         GPBUtil::checkString($var, False);
         $this->iv = $var;
+
+        return $this;
+    }
+
+    /**
+     * ID kunci yang dipakai untuk enkripsi ini. WAJIB disimpan bareng
+     * cipher_text+iv (mis. kolom terpisah di database), dan WAJIB dikirim
+     * balik saat Decrypt. Tanpa ini, rotasi kunci akan membuat data lama
+     * tidak terbaca karena server tidak tahu kunci mana yang harus dipakai.
+     *
+     * Generated from protobuf field <code>string key_id = 3;</code>
+     * @return string
+     */
+    public function getKeyId()
+    {
+        return $this->key_id;
+    }
+
+    /**
+     * ID kunci yang dipakai untuk enkripsi ini. WAJIB disimpan bareng
+     * cipher_text+iv (mis. kolom terpisah di database), dan WAJIB dikirim
+     * balik saat Decrypt. Tanpa ini, rotasi kunci akan membuat data lama
+     * tidak terbaca karena server tidak tahu kunci mana yang harus dipakai.
+     *
+     * Generated from protobuf field <code>string key_id = 3;</code>
+     * @param string $var
+     * @return $this
+     */
+    public function setKeyId($var)
+    {
+        GPBUtil::checkString($var, True);
+        $this->key_id = $var;
 
         return $this;
     }

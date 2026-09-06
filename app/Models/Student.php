@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPhotoAccessToken;
 use App\Multitenancy\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Student extends Model
 {
-    use BelongsToSchool, HasUuids;
+    use BelongsToSchool, HasUuids, HasPhotoAccessToken;
 
     protected $table = 'students';
 
@@ -173,6 +174,11 @@ class Student extends Model
     /**
      * Override save(): simpan dulu data utama (tabel students), lalu flush
      * pending sensitive data ke tabel student_sensitive_data dalam 1x save.
+     *
+     * CATATAN (2 Sep 2026): kalau $sensitive->save() di bawah melempar
+     * SensitiveDataEncryptionException (gRPC gagal), exception itu akan
+     * nembus ke atas dari sini juga - controller pemanggil WAJIB
+     * menangkapnya. Lihat catatan di StudentSensitiveData::setEncrypted().
      */
     public function save(array $options = []): bool
     {

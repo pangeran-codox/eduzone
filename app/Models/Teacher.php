@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPhotoAccessToken;
 use App\Multitenancy\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Teacher extends Model
 {
-    use BelongsToSchool, HasUuids;
+    use BelongsToSchool, HasUuids, HasPhotoAccessToken;
 
     protected $table = 'teachers';
 
@@ -120,6 +121,10 @@ class Teacher extends Model
     /**
      * Override save(): simpan dulu data utama (tabel teachers), lalu flush
      * pending sensitive data ke tabel teacher_sensitive_data dalam 1x save.
+     *
+     * CATATAN (2 Sep 2026): $sensitive->save() bisa melempar
+     * SensitiveDataEncryptionException (gRPC gagal) - nembus ke atas,
+     * controller pemanggil WAJIB menangkapnya.
      */
     public function save(array $options = []): bool
     {

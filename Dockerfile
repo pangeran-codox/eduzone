@@ -48,18 +48,15 @@ RUN docker-php-ext-configure gd --with-jpeg --with-webp \
 # Install Redis extension
 # Gabungkan instalasi semua extension dalam satu blok RUN
 #
-# ⚠️ grpc & protobuf SENGAJA DITUNDA (bukan dihapus permanen) — belum ada
-# controller yang makai encryption service, dan compile grpc dari source di
-# Alpine makan waktu ~1 jam + rawan masalah cache. Begitu mulai kerjain
-# integrasi encryption service (lihat ARCHITECTURE.md §4), aktifkan lagi:
-# 1. tambahkan "grpc protobuf" balik ke baris pecl install & ext-enable di bawah
-# 2. pastikan "linux-headers" ditambahkan lagi ke .build-deps (wajib buat grpc di Alpine)
-# 3. HAPUS "--ignore-platform-req=ext-grpc" dari kedua baris "composer install"
-#    di bawah (development & production stage) — itu cuma buat bypass sementara
-#    karena composer.json minta package grpc/grpc yang butuh ext-grpc aktif.
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
-    && pecl install redis \
-    && docker-php-ext-enable redis \
+# grpc & protobuf DIAKTIFKAN 3 Sep 2026 (sebelumnya ditunda, lihat riwayat
+# komentar sebelum ini di git blame) — dipakai untuk integrasi
+# encryption-engine. Build ini akan MAKAN WAKTU LEBIH LAMA dari biasanya
+# (kompilasi grpc dari source, bisa ~1 jam tergantung resource mesin) —
+# ini normal, bukan hang. zlib-dev ditambahkan karena penyebab paling
+# umum kompilasi grpc gagal di Alpine adalah header zlib.h tidak ketemu.
+RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS linux-headers zlib-dev \
+    && pecl install redis grpc protobuf \
+    && docker-php-ext-enable redis grpc protobuf \
     && apk del .build-deps
 # Install Composer
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
@@ -80,7 +77,7 @@ COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
 # Install composer deps (with dev)
 COPY --chown=laravel:laravel composer.json composer.lock ./
-RUN composer install --no-scripts --no-autoloader --prefer-dist --ignore-platform-req=ext-grpc
+RUN composer install --no-scripts --no-autoloader --prefer-dist
 
 # Copy app
 COPY --chown=laravel:laravel . .
@@ -124,7 +121,7 @@ COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
 # Install composer deps (no dev)
 COPY --chown=laravel:laravel composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --optimize-autoloader --ignore-platform-req=ext-grpc
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --optimize-autoloader
 
 # Copy app
 COPY --chown=laravel:laravel . .

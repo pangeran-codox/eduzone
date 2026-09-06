@@ -34,19 +34,41 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('sync.token')
                 ->prefix('api/internal/sync')
                 ->group(base_path('routes/sync.php'));
+
+            // Serving foto siswa/guru/staff via token opaque - SENGAJA tanpa
+            // middleware 'web' (tidak butuh session/CSRF untuk request gambar).
+            // Dipanggil dari photo_url hasil sync ke absensi-gateway, dan
+            // dari mana pun di UI Laravel yang perlu tampilkan foto orang.
+            // Lihat PersonPhotoController & HasPhotoAccessToken trait.
+            Route::get('/media/person-photo/{token}', \App\Http\Controllers\PersonPhotoController::class)
+                ->name('media.person-photo');
         },
     )
-    ->withMiddleware(function (Middleware $middleware) {
-        // Tenant middleware alias — dipakai di route group yang butuh tenant context
-        $middleware->alias([
-            'tenant'         => \App\Http\Middleware\InitializeTenancy::class,
-            'role'           => \App\Http\Middleware\RoleMiddleware::class,
-            'active'         => \App\Http\Middleware\EnsureUserIsActive::class,
-            'superadmin'     => \App\Http\Middleware\SuperadminOnly::class,
-            'horizon.auth'   => \App\Http\Middleware\SuperadminOnly::class,
-            'sync.token'     => \App\Http\Middleware\VerifySyncToken::class,
-        ]);
-    })
-    ->withExceptions(function (Exceptions $exceptions) {
-        //
+        ->withMiddleware(function (Middleware $middleware) {
+            $middleware->alias([
+                'role'           => \App\Http\Middleware\RoleMiddleware::class,
+                'active'         => \App\Http\Middleware\EnsureUserIsActive::class,
+                'superadmin'     => \App\Http\Middleware\SuperadminOnly::class,
+                'horizon.auth'   => \App\Http\Middleware\SuperadminOnly::class,
+                'sync.token'     => \App\Http\Middleware\VerifySyncToken::class,
+            ]);
+
+            // FIX 6 Sep 2026 — 'tenant' sebelumnya alias tunggal ke
+            // InitializeTenancy (yang cuma set search_path, TIDAK resolve
+            // tenant). Sekarang jadi grup: resolusi tenant DULU, baru guard
+            // Spatie yang menolak request kalau resolusi gagal.
+            $middleware->group('tenant', [
+                \App\Http\Middleware\InitializeTenancy::class,
+                \Spatie\Multitenancy\Http\Middleware\NeedsTenant::class,
+            ]);
+        })
+        ->withExceptions(function (Exceptions $exceptions) {
+            $exceptions->render(function (\Spatie\Multitenancy\Exceptions\NoCurrentTenant $e, \Illuminate\Http\Request $request) {
+                auth()->logout();
+                $request->session()->invalidate();
+
+                return redirect()->route('login')->withErrors([
+                    'login' => 'Sesi sekolah kamu tidak valid. Silakan login ulang.',
+                ]);
+            });
     })->create();

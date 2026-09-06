@@ -9,8 +9,6 @@ use Google\Protobuf\Internal\RepeatedField;
 use Google\Protobuf\Internal\GPBUtil;
 
 /**
- * Request untuk dekripsi
- *
  * Generated from protobuf message <code>encryption.DecryptRequest</code>
  */
 class DecryptRequest extends \Google\Protobuf\Internal\Message
@@ -23,6 +21,16 @@ class DecryptRequest extends \Google\Protobuf\Internal\Message
      * Generated from protobuf field <code>bytes iv = 2;</code>
      */
     protected $iv = '';
+    /**
+     * Generated from protobuf field <code>bytes aad = 3;</code>
+     */
+    protected $aad = '';
+    /**
+     * ID kunci yang dipakai saat data ini dienkripsi (dari EncryptResponse.key_id).
+     *
+     * Generated from protobuf field <code>string key_id = 4;</code>
+     */
+    protected $key_id = '';
 
     /**
      * Constructor.
@@ -32,6 +40,9 @@ class DecryptRequest extends \Google\Protobuf\Internal\Message
      *
      *     @type string $cipher_text
      *     @type string $iv
+     *     @type string $aad
+     *     @type string $key_id
+     *           ID kunci yang dipakai saat data ini dienkripsi (dari EncryptResponse.key_id).
      * }
      */
     public function __construct($data = NULL) {
@@ -79,6 +90,54 @@ class DecryptRequest extends \Google\Protobuf\Internal\Message
     {
         GPBUtil::checkString($var, False);
         $this->iv = $var;
+
+        return $this;
+    }
+
+    /**
+     * Generated from protobuf field <code>bytes aad = 3;</code>
+     * @return string
+     */
+    public function getAad()
+    {
+        return $this->aad;
+    }
+
+    /**
+     * Generated from protobuf field <code>bytes aad = 3;</code>
+     * @param string $var
+     * @return $this
+     */
+    public function setAad($var)
+    {
+        GPBUtil::checkString($var, False);
+        $this->aad = $var;
+
+        return $this;
+    }
+
+    /**
+     * ID kunci yang dipakai saat data ini dienkripsi (dari EncryptResponse.key_id).
+     *
+     * Generated from protobuf field <code>string key_id = 4;</code>
+     * @return string
+     */
+    public function getKeyId()
+    {
+        return $this->key_id;
+    }
+
+    /**
+     * ID kunci yang dipakai saat data ini dienkripsi (dari EncryptResponse.key_id).
+     *
+     * Generated from protobuf field <code>string key_id = 4;</code>
+     * @param string $var
+     * @return $this
+     */
+    public function setKeyId($var)
+    {
+        GPBUtil::checkString($var, True);
+        $this->key_id = $var;
 
         return $this;
     }

@@ -67,9 +67,28 @@ x-app-env: &app-env
   REVERB_APP_ID: ${REVERB_APP_ID}
   REVERB_APP_KEY: ${REVERB_APP_KEY}
   REVERB_APP_SECRET: ${REVERB_APP_SECRET}
-  REVERB_HOST: eduzone_reverb
+  # FIX (3 Sep 2026): sebelumnya "eduzone_reverb" - single prefix, tidak
+  # konsisten dengan pola double-prefix stack ini (eduzone_eduzone_*),
+  # berpotensi gagal resolve begitu dideploy. Verifikasi ulang nama
+  # asli via `docker network inspect shared_network` setelah deploy
+  # pertama - ganti nilai ini kalau ternyata beda dari yang diasumsikan.
+  REVERB_HOST: eduzone_eduzone_reverb
   REVERB_PORT: 8082
   REVERB_SCHEME: http
+
+  # ─── Integrasi absensi-gateway (Go) — ditambahkan 3 Sep 2026 ──────
+  # TANPA ini, GatewayTokenIssuer & VerifySyncToken bakal selalu gagal
+  # di production (secret kosong), walaupun sudah ada di .env server -
+  # docker stack deploy TIDAK otomatis baca .env container, semua env
+  # WAJIB dideklarasikan eksplisit di sini. Lihat komentar di kepala
+  # file ini soal kenapa "env_file:" tidak dipakai di Swarm.
+  ABSENSI_GATEWAY_JWT_SECRET: ${ABSENSI_GATEWAY_JWT_SECRET}
+  ABSENSI_GATEWAY_JWT_TTL: ${ABSENSI_GATEWAY_JWT_TTL:-900}
+  ABSENSI_SYNC_TOKEN: ${ABSENSI_SYNC_TOKEN}
+  # NAMA VAR INI PERLU DIPASTIKAN dari config/services.php - disesuaikan
+  # ke config('services.absensi_gateway.base_url') yang dipanggil
+  # AbsenHpController::storeViaGateway(). Ganti kalau namanya beda.
+  ABSENSI_GATEWAY_BASE_URL: ${ABSENSI_GATEWAY_BASE_URL:-http://absensi-gateway_absensi-gateway:8080}
 
 services:
   # ─── PHP-FPM Laravel App ────────────────────────────────────────
@@ -236,6 +255,8 @@ volumes:
     # di-constraint ke node worker YANG SAMA. Kalau nanti nambah worker
     # node lagi, ganti ke shared storage (NFS/Ceph) atau tambahkan node
     # label constraint yang spesifik — sama catatan seperti Lab Management.
+    # (3 Sep 2026: ini juga sekarang berlaku untuk storage/app/private_photos
+    # — foto siswa/guru/staff fisiknya ada di volume ini juga.)
   eduzone_public:
     name: eduzone_public
     driver: local

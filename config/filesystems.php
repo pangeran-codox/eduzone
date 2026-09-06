@@ -47,6 +47,18 @@ return [
             'report' => false,
         ],
 
+        // Foto siswa/guru/staff - SENGAJA bukan disk 'public'. Diakses
+        // cuma lewat route bertoken (media.person-photo), bukan URL
+        // langsung yang bisa ditebak. Lihat PersonPhotoController &
+        // HasPhotoAccessToken trait. Ditambahkan 2 Sep 2026.
+        'private_photos' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private_photos'),
+            'visibility' => 'private',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

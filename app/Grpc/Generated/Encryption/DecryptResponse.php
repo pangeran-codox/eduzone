@@ -9,14 +9,12 @@ use Google\Protobuf\Internal\RepeatedField;
 use Google\Protobuf\Internal\GPBUtil;
 
 /**
- * Request untuk enkripsi
- *
- * Generated from protobuf message <code>encryption.EncryptRequest</code>
+ * Generated from protobuf message <code>encryption.DecryptResponse</code>
  */
-class EncryptRequest extends \Google\Protobuf\Internal\Message
+class DecryptResponse extends \Google\Protobuf\Internal\Message
 {
     /**
-     * Generated from protobuf field <code>string plain_text = 1;</code>
+     * Generated from protobuf field <code>bytes plain_text = 1;</code>
      */
     protected $plain_text = '';
 
@@ -35,7 +33,7 @@ class EncryptRequest extends \Google\Protobuf\Internal\Message
     }
 
     /**
-     * Generated from protobuf field <code>string plain_text = 1;</code>
+     * Generated from protobuf field <code>bytes plain_text = 1;</code>
      * @return string
      */
     public function getPlainText()
@@ -44,13 +42,13 @@ class EncryptRequest extends \Google\Protobuf\Internal\Message
     }
 
     /**
-     * Generated from protobuf field <code>string plain_text = 1;</code>
+     * Generated from protobuf field <code>bytes plain_text = 1;</code>
      * @param string $var
      * @return $this
      */
     public function setPlainText($var)
     {
-        GPBUtil::checkString($var, True);
+        GPBUtil::checkString($var, False);
         $this->plain_text = $var;
 
         return $this;
