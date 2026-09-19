@@ -36,7 +36,7 @@ class UpdateStudentRequest extends FormRequest
             'nis' => ['nullable', 'string', 'max:50'],
             'nisn' => ['nullable', 'string', 'max:50'],
             'birth_place' => ['nullable', 'string', 'max:255'],
-            'birth_date' => ['nullable', 'date'],
+            'birth_date' => ['required', 'date'],
             'religion' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string'],
             'phone' => ['nullable', 'string', 'max:30'],
@@ -46,6 +46,7 @@ class UpdateStudentRequest extends FormRequest
             'mother_job' => ['nullable', 'string', 'max:255'],
             'parent_address' => ['nullable', 'string'],
             'parent_phone' => ['nullable', 'string', 'max:30'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
         ];
     }
 }

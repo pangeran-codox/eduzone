@@ -5,6 +5,18 @@
     <p class="section-label">Data Pokok</p>
     <div class="grid sm:grid-cols-2 gap-4">
         <div class="sm:col-span-2">
+            <label class="field-label">Foto <span class="field-hint">(opsional, JPG/PNG maks 2MB)</span></label>
+            @if ($student?->photo_access_token)
+                <div class="mb-2">
+                    <img src="{{ route('media.person-photo', ['token' => $student->photo_access_token]) }}"
+                         alt="Foto {{ $student->full_name }}"
+                         class="w-20 h-20 rounded-lg object-cover border"
+                         style="border-color: var(--t-border);">
+                </div>
+            @endif
+            <input type="file" name="photo" accept="image/jpeg,image/png" class="form-input">
+        </div>
+        <div class="sm:col-span-2">
             <label class="field-label">Nama Lengkap</label>
             <input type="text" name="full_name" value="{{ old('full_name', $student?->full_name ?? '') }}" required maxlength="255" class="form-input">
         </div>

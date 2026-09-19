@@ -1,7 +1,14 @@
 # 🏗️ EduZone — Perencanaan Arsitektur Lintas Bahasa (Multi-Service)
-## Tanggal: 6 September 2026
+## Tanggal: 6 September 2026 (Revisi bagian Encryption Service: 9 September 2026)
 ## Status: DRAFT — Perlu Review Tim
 ## Audience: Semua Tim (Backend PHP, Backend Go/Rust/Node, Frontend, DevOps, QA)
+
+> **📝 Catatan revisi 9 Sep 2026:** Bagian Encryption Service (Section 2.2,
+> 5, dan 8.2) diperbaiki berdasarkan review langsung dari tim Rust yang
+> membangun `encryption-engine`, supaya dokumen ini mencerminkan yang
+> BENERAN sudah terbangun & teruji — bukan rencana yang belum
+> diimplementasikan. Section lain (Node.js, Absensi Gateway, dll) TIDAK
+> direview/diubah di revisi ini.
 
 ---
 
@@ -13,7 +20,7 @@
 >
 > 1. **JANGAN menambahkan Node.js jika masalahnya hanya bisa diselesaikan dengan Reverb PHP / queue job biasa.**
 > 2. **JANGAN pernah menyentuh domain absensi (pipeline agregasi attendance_events → daily) — sudah 100% dikelola Go absensi-gateway.**
-> 3. **JANGAN pernah membuat fitur enkripsi field sensitif sendiri — gunakan Encryption Service (gRPC Go/Rust) yang sudah ada.**
+> 3. **JANGAN pernah membuat fitur enkripsi field sensitif sendiri — gunakan Encryption Service (gRPC Rust) yang sudah ada.**
 >
 > 3 aturan di atas = **menghemat ribuan jam kerja bugfix**. Patuhi.
 
@@ -43,7 +50,7 @@ Project EduZone dimulai dengan monolit PHP Laravel. Seiring waktu, karena **spes
 | Tanggal | Service Ditambahkan | Alasan |
 |---|---|---|
 | Fase 1 (Awal) | **PHP Laravel Monolit** | Productivity tinggi untuk CRUD, form validation, RBAC, Blade UI. |
-| Fase 2 | **Go/Rust Encryption Service** (eksternal) | CPU-bound field sensitif enkripsi 10.000+ record/menit. PHP terlalu lambat & tidak cocok untuk long-running gRPC server memory-stable. |
+| Fase 2 | **Rust Encryption Service** (eksternal) | CPU-bound field sensitif enkripsi 10.000+ record/menit (target awal — sejak load test nyata, tercapai jauh di atas ini, lihat Section 5). PHP terlalu lambat & tidak cocok untuk long-running gRPC server memory-stable. |
 | Fase 3 | **Go Absensi Gateway** (eksternal) | Ingest event check-in 500+ device bersamaan dengan latensi rendah. Goroutine + Go channel = 10x lebih cepat + memory 100MB stabil dibanding PHP queue worker. Laravel **hanya konsumen** hasil agregasi akhir. |
 | **Fase 4 (sekarang, September 2026)** | **Node.js Realtime Service** ⭐ (TUGAS BARU DOKUMEN INI) | **Gap 20% yang tidak tertutup Go+PHP:** Interactive 2-way WebSocket (Socket.IO lebih matang dari Reverb PHP untuk Presence/Ack/Room), dan media processing / dokumen batch (Puppeteer PDF, Sharp gambar, ExcelJS streaming) — tidak ada library PHP setara. |
 
@@ -62,18 +69,18 @@ Project EduZone dimulai dengan monolit PHP Laravel. Seiring waktu, karena **spes
 | **MinIO / S3 Compatible** (opsional) | `minio:9000` | File upload foto, dokumen PDF export, asset. | Node.js & PHP sama-sama punya akses read/write. |
 | **Docker Network `network`** | External: true (dibuat oleh compose infra central) | Jaringan privat antar service — **TIDAK BOLEH** expose port internal ke publik. | Semua inter-service communication harus melewati network ini. **Public access hanya via Nginx port 80/443.** |
 
-### 2.2 Service 1 — Go/Rust Encryption Service
+### 2.2 Service 1 — Rust Encryption Service
 
 | Atribut | Nilai |
 |---|---|
-| **Bahasa** | Primary Go 1.22+ / Rust 1.79+ (fallback). |
-| **Protokol** | **gRPC mTLS双向认证** (Tidak ada HTTP plain!) |
+| **Bahasa** | Rust (edition 2021), dibangun dengan `rust:1.85-slim`. **Tidak ada komponen Go pada service ini** — Go dipakai secara terpisah untuk Absensi Gateway (lihat 2.3). |
+| **Protokol** | **gRPC dengan TLS satu arah (server diverifikasi via sertifikat) + token** (header `x-api-key`, dicocokkan dengan `AUTH_TOKEN` di service). **BUKAN mTLS** — client (Laravel) tidak punya dan tidak butuh sertifikatnya sendiri, cukup trust `server.crt` milik server dan mengirim token yang valid di tiap RPC (termasuk `HealthCheck`). Tidak ada HTTP plain. |
 | **Port (network privat)** | TCP 50051 |
-| **Expose Publik** | ❌ TIDAK BOLEH. Hanya aplikasi PHP yang boleh konek via sertifikat client. |
-| **Sertifikat** | `server.crt` + `server.key` dimount dari `services/encryption-engine/certs/` ke setiap container yang butuh akses. |
+| **Expose Publik** | ❌ TIDAK BOLEH. Hanya klien dengan token valid yang boleh konek (saat ini: Laravel). |
+| **Sertifikat** | Cuma `server.crt` (**publik**, self-signed) yang dimount ke container klien (mis. Laravel) dari `services/encryption-engine/certs/`, read-only (`:ro`). **`server.key` (PRIVAT) TIDAK PERNAH dimount ke container manapun selain `encryption`/nginx load balancer-nya sendiri** — kalau sampai ter-mount ke container lain, itu kebocoran kunci server yang serius (siapa pun yang akses container itu bisa impersonate server). |
 | **Akses dari Laravel** | `App\Contracts\EncryptionClientInterface` — Singleton pattern, auto reconnect. **JANGAN buat client baru tiap request.** |
-| **Tugas (HANYA INI, JANGAN TAMBAH YANG LAIN!)** | ✓ `EncryptField()` / `DecryptField()` single field<br>✓ `BatchEncrypt()` / `BatchDecrypt()` untuk 100+ field 1 RPC call<br>✓ `HealthCheck()` untuk monitoring DevOps. |
-| **Pola Error** | Kalau service mati, PHP **bukan crash**, tapi fallback ke cache encrypt terakhir + log ERROR ke Slack DevOps channel. Retry 3 kali exponential backoff. |
+| **Tugas (HANYA INI, JANGAN TAMBAH YANG LAIN!)** | ✓ `Encrypt()` / `Decrypt()` single field<br>✓ `BatchEncrypt()` / `BatchDecrypt()` untuk banyak field sekaligus dalam 1 RPC call (default limit 200 item/batch, bisa diubah lewat `MAX_BATCH_ITEMS`)<br>✓ `HealthCheck()` untuk monitoring DevOps (sudah terhubung ke Docker `HEALTHCHECK`). |
+| **Pola Error** | **Belum final — masih perlu didesain bareng tim Rust, jangan diimplementasikan dari baris ini langsung.** Pertanyaan terbuka yang perlu dijawab dulu: (1) "fallback ke cache" itu cache hasil **decrypt** terakhir (ada risiko menampilkan data basi/stale ke user) atau **antrian encrypt yang ditunda** (pola queue, beda penanganan)? (2) Apakah perlu circuit breaker terpisah dari retry biasa? (3) Retry sebaiknya beda perlakuan per status gRPC — retry masuk akal untuk `UNAVAILABLE`/`DEADLINE_EXCEEDED`, tapi percuma (dan buang waktu) untuk `UNAUTHENTICATED`/`INVALID_ARGUMENT` yang tidak akan pernah berhasil walau diulang. |
 
 ### 2.3 Service 2 — Go Absensi Gateway
 
@@ -146,10 +153,11 @@ Arsitektur final = **4 service specialist**, masing-masing mengerjakan 1 hal den
  └──────┬──────────────────────┬──────────────────────┬─────────────┘
         │                      │                      │
  ┌──────▼──────┐    ┌──────────▼─────────┐   ┌───────▼───────────┐
- │🟥 Go/Rust   │    │ 🟢 Go Absensi      │   │ 🔵 PHP Laravel    │
+ │🟥 Rust      │    │ 🟢 Go Absensi      │   │ 🔵 PHP Laravel    │
  │ Encryption  │    │    Gateway         │   │  (4 containers:   │
  │ Service     │    │ (Pipeline Absensi) │   │  app/queue/sch/   │
- │ (gRPC mTLS) │    │ (HTTP → Laravel)   │   │  reverb)          │
+ │(gRPC TLS+   │    │ (HTTP → Laravel)   │   │  reverb)          │
+ │  token)     │    │                    │   │                    │
  └──────┬──────┘    └──────────┬─────────┘   └───────┬───────────┘
         │                      │                      │
         │                      │              ┌───────▼───────────┐
@@ -168,7 +176,7 @@ Arsitektur final = **4 service specialist**, masing-masing mengerjakan 1 hal den
 
 | No | Tugas / Workload | Service yang Ditunjuk | Alasan — Kenapa Bukan yang Lain? |
 |---|---|---|---|
-| 1 | Enkripsi / Deskripsi field NISN, NIK, NoHP, Alamat detail. | 🟥 Go/Rust Encryption Service | Go/Rust = CPU intensive cepat, gRPC latency < 1ms. Sudah ada. **JANGAN enkripsi di PHP / Node!** |
+| 1 | Enkripsi / Deskripsi field NISN, NIK, NoHP, Alamat detail. | 🟥 Rust Encryption Service | Rust = CPU intensive cepat. Komputasi kripto (AES-256-GCM) sub-milidetik; latency round-trip gRPC end-to-end (termasuk network) terukur **p50 6ms / p99 9.6ms** di concurrency 50 (diukur pakai `ghz`, sandbox 1 vCPU — server produksi berpotensi lebih cepat, tapi overhead network/framing gRPC tidak akan pernah hilang sampai <1ms). Sudah ada. **JANGAN enkripsi di PHP / Node!** |
 | 2 | Ingest check-in device, agregasi event → harian, deteksi status "Terlambat". | 🟢 Go Absensi Gateway | Go channel = 1000 event/menit tanpa lag. SUDAH ADA. **PHP AGGREGATE DINONAKTIFKAN (lihat routes/console.php baris 25)!** |
 | 3 | CRUD Siswa, Guru, Staff, Kurikulum, Kelas, Jadwal. | 🔵 PHP Laravel `app` | Eloquent ORM + BelongsToSchool scope otomatis = productivity tinggi. Form Request Validation = lebih cepat. |
 | 4 | Authentication Session Login + RBAC Middleware Role. | 🔵 PHP Laravel `app` | Laravel Breeze / Session = matang. **Node & Go TIDAK BOLEH melakukan auth sendiri.** Semua auth harus verifikasi dengan token yang dikeluarkan PHP. |
@@ -298,7 +306,7 @@ Ilustrasi ini menunjukkan bagaimana **4 service bisa bekerja bersama dalam 1 fit
 ### 8.2 Setiap Jalur Komunikasi + Cara Aman:
 | Jalur | Source → Dest | Mekanisme Aman | Jangan Lakukan Ini ❌ |
 |---|---|---|---|
-| **Enkripsi Field** | PHP → Go Encryption | gRPC mTLS. Client certificate dimount dari folder certs read-only. Volumenya `:ro` (read-only) di compose. | ❌ Kirim data plain tanpa enkripsi ke gRPC port. ❌ Gunakan plain HTTP port. |
+| **Enkripsi Field** | PHP → Rust Encryption Service | gRPC dengan TLS satu arah (server diverifikasi via `server.crt`, di-mount `:ro` ke container Laravel) **+ token** (header `x-api-key`, dicocokkan `AUTH_TOKEN` di service) di setiap request. **Bukan mTLS** — Laravel tidak punya/butuh sertifikat client sendiri. | ❌ Kirim data plain tanpa enkripsi ke gRPC port. ❌ Gunakan plain HTTP port. ❌ Mount `server.key` (privat) ke container manapun selain service enkripsi itu sendiri. |
 | **Reference Data People/School/Schedule** | Go Absensi → PHP Sync | HTTP endpoint `api/internal/sync/*` dengan header `X-Sync-Token`. Middleware `VerifySyncToken` validasi token sama ENV value `SYNC_TOKEN_SECRET`. | ❌ Expose endpoint sync.php ke publik internet. ❌ Gunakan token hardcode di kode. |
 | **Job Export / PDF / Excel** | PHP → Node | Redis Queue BullMQ. Setiap job payload top-level ada field `hmac_sha256` (signatur rahasia bersama `NODE_SHARED_HMAC`). Worker Node.js compute ulang HMAC(payload body) → bandingkan. TIDAK SAMA → REJECT JOB. | ❌ Percaya saja job dari Redis tanpa signature check! Bisa ada malicious container di network inject job. |
 | **Callback Selesai Job** | Node → PHP | **TIDAK PAKAI HTTP!** Pake Redis channel `php:callbacks:*` yang didengar PHP Horizon Worker Redis queue. No need expose internal endpoint PHP. | ❌ Node call `POST /api/internal/export-callback` ke PHP — tambah surface attack. |
@@ -499,7 +507,7 @@ Semua path ini **relatif ke root project Laravel (`c:\laragon\www\eduzone\`)**:
 
 ---
 
-**Status Akhir:** DRAFT V1.0
+**Status Akhir:** DRAFT V1.0 (bagian Encryption Service direvisi 9 Sep 2026 sesuai review tim Rust)
 **PIC Arsitektur:** [MOHON DIISI NAMA]
 **Tanggal Review Tim:** [MOHON DIISI TANGGAL RAPAT REVIEW TEKNIS]
 **PIC Go Team:** [MOHON DIISI NAMA] — Verifikasi peraturan domain absensi apakah sudah benar.

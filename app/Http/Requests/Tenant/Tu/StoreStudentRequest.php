@@ -46,6 +46,7 @@ class StoreStudentRequest extends FormRequest
             'mother_job' => ['nullable', 'string', 'max:255'],
             'parent_address' => ['nullable', 'string'],
             'parent_phone' => ['nullable', 'string', 'max:30'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
         ];
     }
 

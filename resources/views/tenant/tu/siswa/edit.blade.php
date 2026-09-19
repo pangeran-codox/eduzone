@@ -18,7 +18,7 @@
     </div>
     @endif
 
-    <form method="POST" action="{{ route('tu.siswa.update', $student) }}" class="space-y-8">
+    <form method="POST" action="{{ route('tu.siswa.update', $student) }}" enctype="multipart/form-data" class="space-y-8">
         @csrf
         @method('PUT')
         @include('tenant.tu.siswa._form', ['student' => $student])

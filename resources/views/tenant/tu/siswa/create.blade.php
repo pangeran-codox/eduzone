@@ -18,7 +18,7 @@
     </div>
     @endif
 
-    <form method="POST" action="{{ route('tu.siswa.store') }}" class="space-y-8">
+    <form method="POST" action="{{ route('tu.siswa.store') }}" enctype="multipart/form-data" class="space-y-8">
         @csrf
         @include('tenant.tu.siswa._form')
 
