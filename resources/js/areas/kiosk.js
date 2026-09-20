@@ -16,6 +16,8 @@
 import '../../css/app.css';
 
 const GATEWAY_BASE_PATH = '/gateway/api/v1';
+const GATEWAY_HEALTH_URL = '/gateway/health';
+const HEALTH_POLL_MS = 30000;
 
 const root = document.getElementById('kiosk-root');
 const deviceCode = root.dataset.deviceCode;
@@ -26,7 +28,7 @@ const DEVICE_KEY_STORAGE = `kiosk_device_key_${deviceCode}`;
 // ---------------------------------------------------------------------
 function tickClock() {
     const now = new Date();
-    document.getElementById('kiosk-clock').textContent = now.toLocaleTimeString('id-ID', { hour12: false });
+    document.getElementById('kiosk-clock').textContent = now.toLocaleTimeString('en-GB', { hour12: false });
     document.getElementById('kiosk-date').textContent = now.toLocaleDateString('id-ID', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     });
@@ -74,11 +76,25 @@ eventToggles.forEach((btn) => {
 });
 
 // ---------------------------------------------------------------------
-// Tab switching (RFID / QR aktif, Manual & Wajah masih placeholder -
+// Tab switching (RFID / QR aktif, Manual & Biometrik masih placeholder -
 // gateway belum dukung method itu, lihat komentar di checkin.blade.php)
 // ---------------------------------------------------------------------
 const tabs = document.querySelectorAll('.kiosk-tab');
 const panels = document.querySelectorAll('.kiosk-panel');
+
+const IDLE_COPY = {
+    rfid:      { title: 'Siap Rekam Presensi', subtitle: 'Silakan tempelkan kartu RFID Anda ke area pembaca' },
+    qr:        { title: 'Siap Memindai QR', subtitle: 'Arahkan kode QR ke kamera hingga terdeteksi' },
+    manual:    { title: 'Input Manual', subtitle: 'Belum tersedia. Gunakan kartu RFID atau kode QR' },
+    biometrik: { title: 'Verifikasi Wajah', subtitle: 'Belum tersedia. Gunakan kartu RFID atau kode QR' },
+};
+
+function setIdleCopy(tabName) {
+    const copy = IDLE_COPY[tabName];
+    if (!copy) return;
+    document.getElementById('status-idle-title').textContent = copy.title;
+    document.getElementById('status-idle-subtitle').textContent = copy.subtitle;
+}
 
 tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -87,6 +103,8 @@ tabs.forEach((tab) => {
 
         panels.forEach((p) => p.classList.add('hidden'));
         document.getElementById(`panel-${tab.dataset.tab}`).classList.remove('hidden');
+
+        setIdleCopy(tab.dataset.tab);
 
         if (tab.dataset.tab === 'qr') startQrScanner();
         else stopQrScanner();
@@ -104,6 +122,18 @@ function focusActiveInput() {
 // RFID (reader USB berperilaku seperti keyboard, ketik UID lalu Enter)
 // ---------------------------------------------------------------------
 const rfidInput = document.getElementById('rfid-input');
+const readerDot = document.getElementById('reader-dot');
+const readerLabel = document.getElementById('reader-label');
+
+function setReaderReady(ready) {
+    readerDot.style.background = ready ? '#2FBF71' : 'rgba(252, 249, 239, 0.3)';
+    readerDot.classList.toggle('animate-pulse', ready);
+    readerLabel.textContent = ready ? 'Reader Ready' : 'Ketuk kolom untuk mengaktifkan';
+}
+rfidInput.addEventListener('focus', () => setReaderReady(true));
+rfidInput.addEventListener('blur', () => setReaderReady(false));
+setReaderReady(document.activeElement === rfidInput);
+
 rfidInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && rfidInput.value.trim()) {
         submitCheckin('rfid', rfidInput.value.trim());
@@ -169,6 +199,27 @@ function stopQrScanner() {
         qrStream = null;
     }
 }
+
+// ---------------------------------------------------------------------
+// Status koneksi ke gateway (GET /gateway/health, origin sama lewat NPM)
+// ---------------------------------------------------------------------
+const gatewayStatusEl = document.getElementById('gateway-status');
+
+function setGatewayStatus(ok) {
+    gatewayStatusEl.textContent = ok ? 'TERKONEKSI' : 'TIDAK TERHUBUNG';
+    gatewayStatusEl.style.color = ok ? '#2FBF71' : '#E5484D';
+}
+
+async function checkGateway() {
+    try {
+        const response = await fetch(GATEWAY_HEALTH_URL, { cache: 'no-store' });
+        setGatewayStatus(response.ok);
+    } catch (err) {
+        setGatewayStatus(false);
+    }
+}
+checkGateway();
+setInterval(checkGateway, HEALTH_POLL_MS);
 
 // ---------------------------------------------------------------------
 // Kirim check-in ke absensi-gateway & tampilkan status
@@ -245,7 +296,7 @@ function showResult({ success, flagged, personName, eventType, message }) {
     if (success) {
         success_.classList.remove('hidden');
         success_.classList.add('flex');
-        document.getElementById('status-success-name').textContent = personName ?? '';
+        document.getElementById('status-success-name').textContent = personName || 'Kehadiran tercatat';
         document.getElementById('status-success-detail').textContent =
             (eventType === 'check_in' ? 'Hadir · Masuk' : 'Tercatat · Pulang') +
             (flagged ? ' (ditandai untuk ditinjau)' : '');
@@ -253,6 +304,7 @@ function showResult({ success, flagged, personName, eventType, message }) {
         // event tetap tercatat di gateway tapi warnai kuning sebagai sinyal
         // "berhasil tapi perlu dicek", bukan hijau polos.
         successIcon.style.background = flagged ? '#D4A017' : '#2FBF71';
+        document.getElementById('status-success-detail').style.color = flagged ? '#D4A017' : '#2FBF71';
     } else {
         failed.classList.remove('hidden');
         failed.classList.add('flex');
