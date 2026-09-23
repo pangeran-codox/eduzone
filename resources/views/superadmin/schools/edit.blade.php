@@ -108,8 +108,7 @@
                 </div>
                 <div>
                     <label class="field-label">NIP Kepala Sekolah</label>
-                    <input type="text" disabled value="{{ $school->principal_nip ? '••••••••' : '' }}" placeholder="Menunggu mesin enkripsi aktif" class="form-input" style="opacity:0.4; cursor: not-allowed;">
-                    <p class="field-hint mt-1">🔒 Data sensitif — form ini aktif lagi setelah service enkripsi (gRPC) siap.</p>
+                    <input type="text" name="principal_nip" value="{{ old('principal_nip', $school->principal_nip) }}" class="form-input">
                 </div>
             </div>
         </div>
@@ -133,9 +132,12 @@
                     <input type="text" name="bank_name" value="{{ old('bank_name', $school->bank_name) }}" class="form-input">
                 </div>
                 <div>
-                    <label class="field-label">Nomor & Nama Rekening</label>
-                    <input type="text" disabled value="{{ $school->bank_account_number ? '••••••••' : '' }}" placeholder="Menunggu mesin enkripsi aktif" class="form-input" style="opacity:0.4; cursor: not-allowed;">
-                    <p class="field-hint mt-1">🔒 Data sensitif — form ini aktif lagi setelah service enkripsi (gRPC) siap.</p>
+                    <label class="field-label">Nomor Rekening</label>
+                    <input type="text" name="bank_account_number" value="{{ old('bank_account_number', $school->bank_account_number) }}" class="form-input">
+                </div>
+                <div>
+                    <label class="field-label">Nama Pemilik Rekening</label>
+                    <input type="text" name="bank_account_name" value="{{ old('bank_account_name', $school->bank_account_name) }}" class="form-input">
                 </div>
             </div>
         </div>

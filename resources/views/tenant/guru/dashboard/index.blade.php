@@ -6,7 +6,7 @@
 @section('content')
 
 @php
-    $user = auth()->user();
+    $user        = auth()->user();
     $isWaliKelas = $user->role === 'wali_kelas';
 @endphp
 
@@ -17,22 +17,63 @@
     <p class="text-sm" style="color: var(--t-muted);">{{ now()->translatedFormat('l, d F Y') }}</p>
 </div>
 
+{{-- Info kelas wali kelas --}}
+@if ($isWaliKelas)
+    @if ($homeroomClass)
+        <div class="t-card px-5 py-4 mb-5 flex flex-wrap items-center gap-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                 style="background: rgba(201,162,39,0.15);">
+                <svg class="w-5 h-5" style="color:#8A6D1B;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold uppercase tracking-wide mb-0.5" style="color:var(--t-muted);">Kelas Anda</p>
+                <p class="font-bold text-base" style="color:var(--t-dark);">{{ $homeroomClass->nama_kelas }}</p>
+                <p class="text-xs mt-0.5" style="color:var(--t-muted);">
+                    {{ $homeroomClass->grade }}
+                    @if ($homeroomClass->major)· {{ $homeroomClass->major->name }}@endif
+                    · Tahun Ajaran {{ $homeroomClass->academic_year }}
+                </p>
+            </div>
+            <div class="text-right flex-shrink-0">
+                <p class="text-2xl font-bold" style="color:var(--t-dark);">{{ $totalSiswaKelas }}</p>
+                <p class="text-xs" style="color:var(--t-muted);">Siswa Aktif</p>
+            </div>
+        </div>
+    @else
+        <div class="t-card px-5 py-4 mb-5 flex items-center gap-3" style="border-color:rgba(201,162,39,0.3); background:rgba(201,162,39,0.05);">
+            <svg class="w-5 h-5 flex-shrink-0" style="color:#8A6D1B;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+            </svg>
+            <p class="text-sm" style="color:#8A6D1B;">Belum ada penugasan wali kelas aktif. Hubungi admin sekolah.</p>
+        </div>
+    @endif
+@endif
+
 <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
     @if ($isWaliKelas && Route::has('wali_kelas.absensi.dashboard'))
-    <a href="{{ route('wali_kelas.absensi.dashboard') }}" class="t-card p-5 block hover:opacity-90 transition-opacity">
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style="background: rgba(201,162,39,0.15);">
+    <a href="{{ route('wali_kelas.absensi.dashboard') }}"
+       class="t-card p-5 block hover:opacity-90 transition-opacity">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+             style="background: rgba(201,162,39,0.15);">
             <svg class="w-5 h-5" style="color: #8A6D1B;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
             </svg>
         </div>
         <p class="font-semibold text-sm mb-1" style="color: var(--t-dark);">Absensi Kelas</p>
-        <p class="text-xs" style="color: var(--t-muted);">Lihat status hadir siswa kelas Anda hari ini</p>
+        <p class="text-xs" style="color: var(--t-muted);">
+            @if ($homeroomClass)
+                {{ $homeroomClass->nama_kelas }} — status hadir hari ini
+            @else
+                Lihat status hadir siswa kelas Anda hari ini
+            @endif
+        </p>
     </a>
     @endif
 
-    {{-- Placeholder fitur lain yang belum digarap — tampil redup, bukan link aktif --}}
-    <div class="t-card p-5" style="opacity: 0.5;">
+    <div class="t-card p-5" style="opacity: 0.5; cursor: default;">
         <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style="background: var(--t-slate-bg);">
             <svg class="w-5 h-5" style="color: var(--t-muted);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
@@ -42,7 +83,7 @@
         <p class="text-xs" style="color: var(--t-muted);">Segera hadir</p>
     </div>
 
-    <div class="t-card p-5" style="opacity: 0.5;">
+    <div class="t-card p-5" style="opacity: 0.5; cursor: default;">
         <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style="background: var(--t-slate-bg);">
             <svg class="w-5 h-5" style="color: var(--t-muted);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/>

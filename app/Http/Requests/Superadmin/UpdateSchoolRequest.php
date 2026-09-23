@@ -37,14 +37,15 @@ class UpdateSchoolRequest extends FormRequest
             'website' => ['nullable', 'url', 'max:255'],
 
             'principal_name' => ['nullable', 'string', 'max:255'],
-            // Lihat catatan sama di StoreSchoolRequest soal principal_nip
-            // dkk yang sengaja di-skip karena butuh gRPC yang belum aktif.
+            'principal_nip' => ['nullable', 'string', 'max:20'],
 
             'vision' => ['nullable', 'string'],
             'mission' => ['nullable', 'string'],
             'motto' => ['nullable', 'string', 'max:255'],
 
             'bank_name' => ['nullable', 'string', 'max:255'],
+            'bank_account_number' => ['nullable', 'string', 'max:50'],
+            'bank_account_name' => ['nullable', 'string', 'max:255'],
 
             'subscription_plan' => ['required', Rule::in(['trial', 'basic', 'pro'])],
             'subscription_until' => ['nullable', 'date'],

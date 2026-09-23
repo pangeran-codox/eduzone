@@ -17,7 +17,7 @@ use Encryption\DecryptRequest;
 use Grpc\ChannelCredentials;
 
 $id   = isset($argv[1]) ? (int) $argv[1] : 0;
-$host = getenv('ENCRYPTION_ENGINE_HOST') ?: 'encryption-engine:50051';
+$host = getenv('ENCRYPTION_SERVICE_HOST') ?: 'encryption:50051';
 
 $start = microtime(true);
 $status = 'OK';

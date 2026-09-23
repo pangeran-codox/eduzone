@@ -117,6 +117,7 @@ class AbsensiController extends Controller
             'stats' => $stats,
             'records' => $records,
             'class' => $class,
+            'totalSiswa' => $studentsInClass->count(),
         ]);
     }
 

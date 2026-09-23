@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Tenant\AbsensiHealthController;
+use App\Http\Controllers\Tenant\Tu\AttendanceDashboardController;
+use App\Http\Controllers\Tenant\Kepsek\AttendanceMonitorController;
 
 /*
 |--------------------------------------------------------------------------
@@ -86,6 +88,8 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
                 ? view('tenant.kepsek.dashboard.index')
                 : response(eduzone_placeholder_dashboard('Dashboard Kepala Sekolah — segera hadir'), 200);
         })->name('dashboard');
+        Route::get('/absensi', [AttendanceMonitorController::class, 'index'])->name('absensi.index');
+        Route::get('/absensi/data', [AttendanceMonitorController::class, 'data'])->name('absensi.data');
     });
 
     // ── Kurikulum ──────────────────────────────────────────────────────
@@ -121,11 +125,8 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
 
     // ── Guru (guru_mapel + wali_kelas) ─────────────────────────────────
     Route::prefix('guru')->name('guru.')->middleware('role:guru_mapel,wali_kelas')->group(function () {
-        Route::get('/dashboard', function () {
-            return view()->exists('tenant.guru.dashboard.index')
-                ? view('tenant.guru.dashboard.index')
-                : response(eduzone_placeholder_dashboard('Dashboard Guru — segera hadir'), 200);
-        })->name('dashboard');
+        Route::get('/dashboard', [\App\Http\Controllers\Tenant\Guru\DashboardController::class, 'index'])
+            ->name('dashboard');
     });
 
     Route::middleware('role:kepsek,tu')->group(function () {
@@ -261,14 +262,21 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::post('/{device}/regenerate-key', [\App\Http\Controllers\Tenant\Absensi\DeviceController::class, 'regenerateKey'])->name('regenerate-key');
     });
 
-        // ── Data Siswa (TU kelola data induk siswa) ─────────────────────────
-    Route::prefix('tu/siswa')->name('tu.siswa.')->middleware('role:tu')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'index'])->name('index');
-        Route::get('/create', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'create'])->name('create');
-        Route::post('/', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'store'])->name('store');
-        Route::get('/{student}/edit', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'edit'])->name('edit');
-        Route::put('/{student}', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'update'])->name('update');
-        Route::delete('/{student}', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'destroy'])->name('destroy');
+        // ── TU: Data Siswa + Dashboard Absensi ─────────────────────────────
+    Route::prefix('tu')->name('tu.')->middleware('role:tu')->group(function () {
+        // Data Siswa
+        Route::prefix('siswa')->name('siswa.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'index'])->name('index');
+            Route::get('/create', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'create'])->name('create');
+            Route::post('/', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'store'])->name('store');
+            Route::get('/{student}/edit', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'edit'])->name('edit');
+            Route::put('/{student}', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'update'])->name('update');
+            Route::delete('/{student}', [\App\Http\Controllers\Tenant\Tu\StudentController::class, 'destroy'])->name('destroy');
+        });
+
+        // Dashboard Absensi
+        Route::get('/absensi', [AttendanceDashboardController::class, 'index'])->name('absensi.index');
+        Route::get('/absensi/data', [AttendanceDashboardController::class, 'data'])->name('absensi.data');
     });
 
 });

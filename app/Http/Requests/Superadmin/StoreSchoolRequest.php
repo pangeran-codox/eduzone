@@ -45,18 +45,15 @@ class StoreSchoolRequest extends FormRequest
             'website' => ['nullable', 'url', 'max:255'],
 
             'principal_name' => ['nullable', 'string', 'max:255'],
-            // principal_nip, bank_account_number, bank_account_name SENGAJA
-            // tidak divalidasi/diterima di sini — kolom itu di-cast
-            // EncryptedAttribute yang butuh service gRPC, dan extension
-            // grpc/protobuf masih dinonaktifkan di Dockerfile (lihat
-            // SKILL.md). Mengisi field ini akan fatal error, bukan cuma
-            // gagal validasi. Aktifkan lagi setelah gRPC diaktifkan.
+            'principal_nip' => ['nullable', 'string', 'max:20'],
 
             'vision' => ['nullable', 'string'],
             'mission' => ['nullable', 'string'],
             'motto' => ['nullable', 'string', 'max:255'],
 
             'bank_name' => ['nullable', 'string', 'max:255'],
+            'bank_account_number' => ['nullable', 'string', 'max:50'],
+            'bank_account_name' => ['nullable', 'string', 'max:255'],
 
             'subscription_plan' => ['required', Rule::in(['trial', 'basic', 'pro'])],
             'subscription_until' => ['nullable', 'date'],

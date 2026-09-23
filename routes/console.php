@@ -32,3 +32,10 @@ Schedule::command('horizon:snapshot')->everyFiveMinutes();
 // diisi gateway maupun sisa data lama), jadi tetap valid dipakai meski
 // yang mengisi attendance_daily sekarang cuma gateway.
 Schedule::command('absensi:sync-daily-to-main')->everyTenMinutes();
+
+// absensi:sync-teacher-daily-to-main - versi guru dari command di atas,
+// duplikat pola yang sama (attendance_daily person_type='teacher' ->
+// teacher_attendance DB utama). Ditambahkan 22 Sep 2026 setelah dikonfirmasi
+// migration teacher_attendance sudah ada sejak awal (komentar lama di
+// SyncAttendanceDailyToMain soal "migration belum ada" sudah usang).
+Schedule::command('absensi:sync-teacher-daily-to-main')->everyTenMinutes();
