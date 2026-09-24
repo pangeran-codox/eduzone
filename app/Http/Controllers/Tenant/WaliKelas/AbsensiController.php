@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Tenant\WaliKelas;
 
 use App\Http\Controllers\Controller;
-use App\Models\Absensi\AttendanceEvent;
+use App\Models\Absensi\AttendanceDaily;
 use App\Models\Absensi\PeopleRef;
 use App\Models\HomeroomAssignment;
 use App\Models\SchoolClass;
@@ -15,21 +15,18 @@ use Illuminate\Support\Carbon;
  * Dashboard absensi harian untuk wali kelas — status hadir hari ini per
  * siswa di kelas yang dia pegang.
  *
- * CATATAN SCOPE (per keputusan — query langsung attendance_events, belum
- * ada job sync attendance_daily): status yang bisa ditentukan cuma
- * "Hadir" (ada event check_in hari ini) vs "Belum Absen". Status
- * Izin/Sakit/Alpa/Terlambat TIDAK bisa diturunkan dari attendance_events —
- * event_type di tabel ini cuma check_in/check_out/unknown (lihat CHECK
- * constraint migration), tidak ada kategori administratif semacam itu.
- * Begitu modul izin/sakit manual atau job sync attendance_daily ada,
- * dashboard ini perlu direvisi buat menggabungkan sumber data itu.
+ * DIUPGRADE 24 Sep 2026: sebelumnya query langsung attendance_events
+ * (cuma bisa Hadir/Belum Absen). Sekarang baca AttendanceDaily, sama
+ * seperti Kepsek\AttendanceMonitorController & Tu\AttendanceDashboardController
+ * — otomatis dapat status Terlambat/Sakit/Izin/Alpa begitu sync job
+ * (absensi:sync-daily-to-main) atau input manual TU mengisinya.
  *
  * Alur resolve "kelas mana yang dipegang wali kelas ini":
  *   User (login) -> Teacher (via user_id) -> HomeroomAssignment aktif
  *   (via teacher_id) -> class_id
  *
- * people_ref & attendance_events ada di database terpisah (pgsql_absensi).
- * person_type di kedua tabel itu pakai 'student' (BUKAN 'siswa').
+ * people_ref & attendance_daily ada di database terpisah (pgsql_absensi).
+ * person_type pakai 'student' (BUKAN 'siswa').
  */
 class AbsensiController extends Controller
 {
@@ -78,38 +75,34 @@ class AbsensiController extends Controller
 
         $studentIds = $studentsInClass->pluck('person_id');
 
-        // Ambil semua event hari ini buat siswa-siswa di kelas ini, urut
-        // waktu — supaya firstWhere('event_type', 'check_in') di bawah
-        // otomatis dapat tap PALING AWAL kalau ada beberapa check_in
-        // (misal tap ulang karena gagal pertama kali).
-        $events = AttendanceEvent::where('school_id', $schoolId)
+        $daily = AttendanceDaily::where('school_id', $schoolId)
             ->where('person_type', 'student')
+            ->where('date', $today->toDateString())
             ->whereIn('person_id', $studentIds)
-            ->whereBetween('recorded_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
-            ->orderBy('recorded_at')
-            ->get();
+            ->get()
+            ->keyBy('person_id');
 
-        $eventsByStudent = $events->groupBy('person_id');
-
-        $records = $studentsInClass->map(function ($student) use ($eventsByStudent) {
-            $studentEvents = $eventsByStudent->get($student->person_id, collect());
-            $checkIn = $studentEvents->firstWhere('event_type', 'check_in');
-            $hasAnomaly = $studentEvents->contains(fn ($e) => ! $e->is_valid || $e->flagged_reason);
+        $records = $studentsInClass->map(function ($student) use ($daily) {
+            $row = $daily->get($student->person_id);
 
             return [
                 'nama' => $student->full_name,
-                'waktu' => $checkIn?->recorded_at?->format('H:i'),
-                'metode' => $this->formatMetode($checkIn?->method),
-                'status' => $checkIn ? 'Hadir' : 'Belum Absen',
-                'has_anomaly' => $hasAnomaly,
+                'waktu' => $row?->first_check_in,
+                'metode' => $this->formatMetode($row?->primary_method),
+                'status' => $row->status ?? 'Belum Absen',
+                'notes' => $row->notes ?? null,
+                'has_anomaly' => (bool) ($row->has_anomaly ?? false),
             ];
         })->values();
 
-        $stats = [
-            'hadir' => $records->where('status', 'Hadir')->count(),
-            'belum' => $records->where('status', 'Belum Absen')->count(),
-            'anomali' => $records->where('has_anomaly', true)->count(),
-        ];
+        $statuses = ['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alpa'];
+        $stats = array_fill_keys($statuses, 0);
+        $stats['belum'] = $records->where('status', 'Belum Absen')->count();
+        $stats['anomali'] = $records->where('has_anomaly', true)->count();
+
+        foreach ($statuses as $s) {
+            $stats[$s] = $records->where('status', $s)->count();
+        }
 
         return view('tenant.absensi.dashboard', [
             'noClass' => false,

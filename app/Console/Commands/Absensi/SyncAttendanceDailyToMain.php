@@ -72,9 +72,10 @@ class SyncAttendanceDailyToMain extends Command
                     'check_in' => $row->first_check_in,
                     'check_out' => $row->last_check_out,
                     'status' => $row->status,
-                    'notes' => $row->has_anomaly
-                        ? 'Ditandai anomali oleh sistem absensi — perlu verifikasi manual.'
-                        : $attendance->notes,
+                    'notes' => $row->notes
+                        ?? ($row->has_anomaly
+                            ? 'Ditandai anomali oleh sistem absensi — perlu verifikasi manual.'
+                            : $attendance->notes),
                 ]);
                 $attendance->save();
 

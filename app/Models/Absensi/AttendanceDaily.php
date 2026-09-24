@@ -39,6 +39,7 @@ class AttendanceDaily extends Model
         'primary_method',
         'total_events',
         'has_anomaly',
+        'notes',
     ];
 
     protected $casts = [

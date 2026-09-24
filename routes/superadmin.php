@@ -3,6 +3,7 @@
 use App\Http\Controllers\Superadmin\Auth\SuperadminLoginController;
 use App\Http\Controllers\Superadmin\DashboardController;
 use App\Http\Controllers\Superadmin\AbsensiHealthController;
+use App\Http\Controllers\Superadmin\AbsensiRekapController;
 use App\Http\Controllers\Superadmin\DeviceController;
 use App\Http\Controllers\Superadmin\SchoolController;
 use App\Http\Controllers\Superadmin\UserController;
@@ -66,6 +67,10 @@ Route::middleware('superadmin')->group(function () {
 
     Route::get('/absensi/health/status', [AbsensiHealthController::class, 'status'])
         ->name('absensi.health.status');
+    Route::get('/absensi/rekap', [AbsensiRekapController::class, 'index'])
+        ->name('absensi.rekap');
+    Route::get('/absensi/rekap/status', [AbsensiRekapController::class, 'status'])
+        ->name('absensi.rekap.status');
 
     Route::prefix('absensi/devices')->name('absensi.devices.')->group(function () {
     Route::get('/', [DeviceController::class, 'index'])->name('index');

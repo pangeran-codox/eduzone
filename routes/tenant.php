@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Tenant\AbsensiHealthController;
 use App\Http\Controllers\Tenant\Tu\AttendanceDashboardController;
 use App\Http\Controllers\Tenant\Kepsek\AttendanceMonitorController;
+use App\Http\Controllers\Tenant\GuruMapel\AbsensiController as GuruMapelAbsensiController;
 
 /*
 |--------------------------------------------------------------------------
@@ -132,11 +133,16 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
     Route::middleware('role:kepsek,tu')->group(function () {
     Route::get('/absensi/rekap', [\App\Http\Controllers\Tenant\Absensi\RekapController::class, 'index'])
         ->name('absensi.rekap.index');
-});
+    });
 
     Route::middleware('role:wali_kelas')->group(function () {
     Route::get('/absensi', [\App\Http\Controllers\Tenant\WaliKelas\AbsensiController::class, 'dashboard'])
         ->name('wali_kelas.absensi.dashboard');
+    });
+
+    Route::prefix('guru-mapel')->name('guru_mapel.')->middleware('role:guru_mapel')->group(function () {
+    Route::get('/absensi', [GuruMapelAbsensiController::class, 'index'])->name('absensi.index');
+    Route::get('/absensi/{scheduleId}', [GuruMapelAbsensiController::class, 'detail'])->name('absensi.detail');
     });
 
     // ── Kesiswaan ──────────────────────────────────────────────────────
@@ -277,6 +283,9 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         // Dashboard Absensi
         Route::get('/absensi', [AttendanceDashboardController::class, 'index'])->name('absensi.index');
         Route::get('/absensi/data', [AttendanceDashboardController::class, 'data'])->name('absensi.data');
+        // Input manual Izin/Sakit/Alpa
+        Route::get('/absensi/manual', [\App\Http\Controllers\Tenant\Tu\ManualAttendanceController::class, 'index'])->name('absensi.manual.index');
+        Route::post('/absensi/manual', [\App\Http\Controllers\Tenant\Tu\ManualAttendanceController::class, 'store'])->name('absensi.manual.store');
     });
 
 });
