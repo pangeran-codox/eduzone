@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Tenant\AbsensiHealthController;
 use App\Http\Controllers\Tenant\Tu\AttendanceDashboardController;
+use App\Http\Controllers\Tenant\Tu\CredentialController;
 use App\Http\Controllers\Tenant\Kepsek\AttendanceMonitorController;
 use App\Http\Controllers\Tenant\GuruMapel\AbsensiController as GuruMapelAbsensiController;
 
@@ -122,6 +123,15 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
                 'totalStaff' => \App\Models\Staff::where('is_active', true)->count(),
             ]);
         })->name('dashboard');
+
+        // Kredensial QR - sub-grup sendiri, path /tu/kredensial/..., nama route tu.kredensial.*
+            Route::prefix('kredensial')->name('kredensial.')->group(function () {
+            Route::get('/', [CredentialController::class, 'index'])->name('index');
+            Route::post('/generate/{personType}/{personId}', [CredentialController::class, 'generate'])->name('generate');
+            Route::post('/generate-kelas/{classId}', [CredentialController::class, 'generateForClass'])->name('generate-class');
+            Route::post('/generate-tipe/{personType}', [CredentialController::class, 'generateForType'])->name('generate-type');
+            Route::get('/cetak', [CredentialController::class, 'print'])->name('print');
+        });
     });
 
     // ── Guru (guru_mapel + wali_kelas) ─────────────────────────────────

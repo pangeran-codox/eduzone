@@ -179,6 +179,15 @@
         </a>
         @endif
 
+        @if ($role === 'tu' && Route::has('tu.kredensial.index'))
+        <a href="{{ route('tu.kredensial.index') }}" class="nav-item {{ request()->routeIs('tu.kredensial.*') ? 'active' : '' }}">
+            <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.5h16.5M3.75 9h16.5M3.75 13.5h16.5m-16.5 4.5h16.5"/>
+            </svg>
+            Kredensial QR
+        </a>
+        @endif
+
         @if ($role === 'tu' && Route::has('tu.absensi.manual.index'))
         <a href="{{ route('tu.absensi.manual.index') }}" class="nav-item {{ request()->routeIs('tu.absensi.manual.*') ? 'active' : '' }}">
             <svg class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

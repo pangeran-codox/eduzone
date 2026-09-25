@@ -3,24 +3,20 @@
 namespace App\Http\Controllers\Tenant\Absensi;
 
 use App\Http\Controllers\Controller;
-use App\Models\Absensi\AttendanceEvent;
+use App\Models\Absensi\AttendanceDaily;
 use App\Models\Absensi\PeopleRef;
 use App\Models\SchoolClass;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 /**
- * Rekap absensi sekolah-wide (semua kelas) untuk Kepsek & TU — status hari
- * ini per kelas.
+ * Rekap absensi sekolah-wide (semua kelas) untuk Kepsek & TU — per kelas,
+ * bisa filter tanggal.
  *
- * Sama seperti dashboard Wali Kelas (App\Http\Controllers\Tenant\WaliKelas\
- * AbsensiController) — query langsung attendance_events mentah, BELUM ada
- * job sync attendance_daily. Status cuma Hadir/Belum Absen + penanda
- * Anomali. TIDAK ada Izin/Sakit/Alpa/Terlambat (lihat catatan di
- * AbsensiController wali kelas untuk alasan lengkap).
- *
- * Kalau nanti ada job sync attendance_daily, controller ini + dashboard
- * wali kelas perlu direvisi bareng buat baca dari sana.
+ * DIUPGRADE 25 Sep 2026: sebelumnya query attendance_events mentah (cuma
+ * Hadir/Belum Absen), sekarang baca AttendanceDaily — dapat 5 status
+ * penuh (Hadir/Terlambat/Sakit/Izin/Alpa), konsisten dengan dashboard
+ * live Kepsek/TU/Wali Kelas. Filter tanggal ditambahkan sekaligus.
  */
 class RekapController extends Controller
 {
@@ -28,7 +24,7 @@ class RekapController extends Controller
     {
         $user = auth()->user();
         $schoolId = $user->school_id;
-        $today = Carbon::today();
+        $date = $this->resolveDate($request);
 
         $classes = SchoolClass::where('school_id', $schoolId)
             ->where('is_active', true)
@@ -46,40 +42,46 @@ class RekapController extends Controller
 
         $allStudentIds = $studentsByClass->flatten()->pluck('person_id');
 
-        $eventsByStudent = AttendanceEvent::where('school_id', $schoolId)
+        $dailyByStudent = AttendanceDaily::where('school_id', $schoolId)
             ->where('person_type', 'student')
+            ->where('date', $date->toDateString())
             ->whereIn('person_id', $allStudentIds)
-            ->whereBetween('recorded_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
-            ->orderBy('recorded_at')
             ->get()
-            ->groupBy('person_id');
+            ->keyBy('person_id');
 
-        $rows = $classes->map(function ($class) use ($studentsByClass, $eventsByStudent) {
+        $rows = $classes->map(function ($class) use ($studentsByClass, $dailyByStudent) {
             $classStudents = $studentsByClass->get($class->id, collect());
 
-            $hadir = 0;
+            $statusCounts = ['Hadir' => 0, 'Terlambat' => 0, 'Sakit' => 0, 'Izin' => 0, 'Alpa' => 0];
             $anomali = 0;
+            $belum = 0;
 
             foreach ($classStudents as $student) {
-                $studentEvents = $eventsByStudent->get($student->person_id, collect());
-                $checkIn = $studentEvents->firstWhere('event_type', 'check_in');
+                $row = $dailyByStudent->get($student->person_id);
 
-                if ($checkIn) {
-                    $hadir++;
-                }
+                if ($row) {
+                    $statusCounts[$row->status] = ($statusCounts[$row->status] ?? 0) + 1;
 
-                if ($studentEvents->contains(fn ($e) => ! $e->is_valid || $e->flagged_reason)) {
-                    $anomali++;
+                    if ($row->has_anomaly) {
+                        $anomali++;
+                    }
+                } else {
+                    $belum++;
                 }
             }
 
             $total = $classStudents->count();
+            $hadir = $statusCounts['Hadir'] + $statusCounts['Terlambat'];
 
             return [
                 'nama_kelas' => $class->nama_kelas,
                 'total' => $total,
                 'hadir' => $hadir,
-                'belum' => $total - $hadir,
+                'terlambat' => $statusCounts['Terlambat'],
+                'sakit' => $statusCounts['Sakit'],
+                'izin' => $statusCounts['Izin'],
+                'alpa' => $statusCounts['Alpa'],
+                'belum' => $belum,
                 'anomali' => $anomali,
                 'persen' => $total > 0 ? round($hadir / $total * 100) : 0,
             ];
@@ -88,14 +90,34 @@ class RekapController extends Controller
         $totals = [
             'total' => $rows->sum('total'),
             'hadir' => $rows->sum('hadir'),
+            'terlambat' => $rows->sum('terlambat'),
+            'sakit' => $rows->sum('sakit'),
+            'izin' => $rows->sum('izin'),
+            'alpa' => $rows->sum('alpa'),
             'belum' => $rows->sum('belum'),
             'anomali' => $rows->sum('anomali'),
         ];
         $totals['persen'] = $totals['total'] > 0 ? round($totals['hadir'] / $totals['total'] * 100) : 0;
 
         return view('tenant.absensi.rekap', [
+            'date' => $date->toDateString(),
             'rows' => $rows,
             'totals' => $totals,
         ]);
+    }
+
+    private function resolveDate(Request $request): Carbon
+    {
+        $raw = $request->query('date');
+
+        if ($raw && preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            try {
+                return Carbon::createFromFormat('Y-m-d', $raw)->startOfDay();
+            } catch (\Exception) {
+                //
+            }
+        }
+
+        return Carbon::today();
     }
 }
