@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Tenant\AbsensiHealthController;
 use App\Http\Controllers\Tenant\Tu\AttendanceDashboardController;
 use App\Http\Controllers\Tenant\Tu\CredentialController;
+use App\Http\Controllers\Tenant\Tu\AttendanceReportController;
 use App\Http\Controllers\Tenant\Kepsek\AttendanceMonitorController;
 use App\Http\Controllers\Tenant\GuruMapel\AbsensiController as GuruMapelAbsensiController;
 
@@ -125,12 +126,29 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         })->name('dashboard');
 
         // Kredensial QR - sub-grup sendiri, path /tu/kredensial/..., nama route tu.kredensial.*
-            Route::prefix('kredensial')->name('kredensial.')->group(function () {
+        Route::prefix('kredensial')->name('kredensial.')->group(function () {
             Route::get('/', [CredentialController::class, 'index'])->name('index');
             Route::post('/generate/{personType}/{personId}', [CredentialController::class, 'generate'])->name('generate');
             Route::post('/generate-kelas/{classId}', [CredentialController::class, 'generateForClass'])->name('generate-class');
             Route::post('/generate-tipe/{personType}', [CredentialController::class, 'generateForType'])->name('generate-type');
             Route::get('/cetak', [CredentialController::class, 'print'])->name('print');
+        });
+
+        // Laporan Absensi historis - sub-grup sendiri, path /tu/laporan/..., nama route tu.laporan.*
+        Route::prefix('laporan')->name('laporan.')->group(function () {
+            Route::get('/', [AttendanceReportController::class, 'index'])->name('index');
+            Route::get('/export/excel', [AttendanceReportController::class, 'exportExcel'])->name('export-excel');
+            Route::get('/export/pdf', [AttendanceReportController::class, 'exportPdf'])->name('export-pdf');
+        });
+
+        // Data Guru
+        Route::prefix('guru')->name('guru.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'index'])->name('index');
+            Route::get('/create', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'create'])->name('create');
+            Route::post('/', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'store'])->name('store');
+            Route::get('/{teacher}/edit', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'edit'])->name('edit');
+            Route::put('/{teacher}', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'update'])->name('update');
+            Route::delete('/{teacher}', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'destroy'])->name('destroy');
         });
     });
 

@@ -33,8 +33,8 @@ class StoreStudentRequest extends FormRequest
             // Field sensitif - BUKAN kolom asli tabel students (proxy ke
             // student_sensitive_data via magic __set di model Student),
             // tapi validasinya tetap normal karena ini soal input request.
-            'nis' => ['nullable', 'string', 'max:50'],
-            'nisn' => ['nullable', 'string', 'max:50'],
+            'nis' => ['nullable', 'string', 'max:50', new \App\Rules\UniqueHashedField('students', 'nis_hash')],
+            'nisn' => ['nullable', 'string', 'max:50', new \App\Rules\UniqueHashedField('students', 'nisn_hash')],
             'birth_place' => ['nullable', 'string', 'max:255'],
             'birth_date' => ['nullable', 'date'],
             'religion' => ['nullable', 'string', 'max:50'],

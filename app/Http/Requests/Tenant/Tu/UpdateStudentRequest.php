@@ -33,8 +33,8 @@ class UpdateStudentRequest extends FormRequest
             'joined_date' => ['nullable', 'date'],
             'status' => ['required', Rule::in(['aktif', 'pindah', 'lulus', 'keluar'])],
 
-            'nis' => ['nullable', 'string', 'max:50'],
-            'nisn' => ['nullable', 'string', 'max:50'],
+            'nis' => ['nullable', 'string', 'max:50', (new \App\Rules\UniqueHashedField('students', 'nis_hash'))->ignore($studentId)],
+            'nisn' => ['nullable', 'string', 'max:50', (new \App\Rules\UniqueHashedField('students', 'nisn_hash'))->ignore($studentId)],
             'birth_place' => ['nullable', 'string', 'max:255'],
             'birth_date' => ['required', 'date'],
             'religion' => ['nullable', 'string', 'max:50'],

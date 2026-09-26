@@ -7,6 +7,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "barryvdh/laravel-dompdf": "^3.1",
         "endroid/qr-code": "^6.0",
         "firebase/php-jwt": "^7.1",
         "google/protobuf": "^5.36",
@@ -15,6 +16,7 @@
         "laravel/horizon": "^5.47",
         "laravel/reverb": "^1.11",
         "laravel/tinker": "^2.9",
+        "maatwebsite/excel": "^3.1",
         "spatie/laravel-multitenancy": "^4.1"
     },
     "require-dev": {
