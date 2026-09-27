@@ -3,30 +3,12 @@
 namespace App\Console\Commands\Absensi;
 
 use App\Models\Absensi\AttendanceDaily;
+use App\Models\Absensi\ManualAttendanceOverride;
 use App\Models\Absensi\SyncLog;
 use App\Models\StudentAttendance;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
-/**
- * Tahap 2 sinkronisasi absensi: attendance_daily (pgsql_absensi) ->
- * student_attendance (DB utama), tercatat di sync_log.
- *
- * SCOPE SEKARANG CUMA SISWA (person_type = 'student') — migration
- * teacher_attendance belum ada/belum dibagikan. Kalau nanti ada, tinggal
- * duplikasi command ini (atau parameterize target model) buat guru.
- *
- * person_id di attendance_daily == students.id di DB utama (PeopleRef
- * adalah cache read-only satu arah dari tabel students, jadi ID-nya
- * identik, bukan mapping terpisah).
- *
- * Idempotent lewat updateOrCreate berdasarkan (school_id, student_id,
- * date) — TAPI migration student_attendance tidak punya unique constraint
- * di kombinasi itu (cuma primary key UUID biasa). Job ini aman dijalankan
- * berulang selama TIDAK dijalankan concurrent (dua proses bersamaan bisa
- * balapan insert duplikat). Kalau butuh jaminan lebih ketat, tambahkan
- * migration unique index (school_id, student_id, date) di student_attendance.
- */
 class SyncAttendanceDailyToMain extends Command
 {
     protected $signature = 'absensi:sync-daily-to-main {--date= : Tanggal (YYYY-MM-DD), default hari ini}';
@@ -68,14 +50,25 @@ class SyncAttendanceDailyToMain extends Command
                     'date' => $row->date->toDateString(),
                 ]);
 
+                // Override manual TU (kalau ada) SELALU menang dibanding
+                // hasil agregasi gateway - lihat ReapplyManualAttendanceOverrides
+                // untuk penjelasan lengkap kenapa ini perlu.
+                $override = ManualAttendanceOverride::where([
+                    'school_id' => $row->school_id,
+                    'person_id' => $row->person_id,
+                    'person_type' => 'student',
+                    'date' => $row->date->toDateString(),
+                ])->first();
+
                 $attendance->fill([
                     'check_in' => $row->first_check_in,
                     'check_out' => $row->last_check_out,
-                    'status' => $row->status,
-                    'notes' => $row->notes
-                        ?? ($row->has_anomaly
-                            ? 'Ditandai anomali oleh sistem absensi — perlu verifikasi manual.'
-                            : $attendance->notes),
+                    'status' => $override->status ?? $row->status,
+                    'notes' => $override->notes
+                        ?? ($row->notes
+                            ?? ($row->has_anomaly
+                                ? 'Ditandai anomali oleh sistem absensi — perlu verifikasi manual.'
+                                : $attendance->notes)),
                 ]);
                 $attendance->save();
 

@@ -39,3 +39,7 @@ Schedule::command('absensi:sync-daily-to-main')->everyTenMinutes();
 // migration teacher_attendance sudah ada sejak awal (komentar lama di
 // SyncAttendanceDailyToMain soal "migration belum ada" sudah usang).
 Schedule::command('absensi:sync-teacher-daily-to-main')->everyTenMinutes();
+
+// Perbaikan race condition manual-override vs agregasi gateway - lihat
+// ReapplyManualAttendanceOverrides untuk penjelasan lengkap.
+Schedule::command('absensi:reapply-manual-overrides')->everyFiveMinutes();

@@ -3,19 +3,12 @@
 namespace App\Console\Commands\Absensi;
 
 use App\Models\Absensi\AttendanceDaily;
+use App\Models\Absensi\ManualAttendanceOverride;
 use App\Models\Absensi\SyncLog;
 use App\Models\TeacherAttendance;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
-/**
- * Tahap 2 sinkronisasi absensi guru: attendance_daily (pgsql_absensi) ->
- * teacher_attendance (DB utama), tercatat di sync_log.
- *
- * Duplikat dari SyncAttendanceDailyToMain, scope person_type='teacher'.
- * Lihat docblock command itu untuk detail idempotency & catatan race
- * condition (unique constraint) yang sama berlaku di sini.
- */
 class SyncTeacherAttendanceDailyToMain extends Command
 {
     protected $signature = 'absensi:sync-teacher-daily-to-main {--date= : Tanggal (YYYY-MM-DD), default hari ini}';
@@ -57,14 +50,26 @@ class SyncTeacherAttendanceDailyToMain extends Command
                     'date' => $row->date->toDateString(),
                 ]);
 
+                // Override manual TU (kalau ada) SELALU menang dibanding
+                // hasil agregasi gateway - sama seperti versi siswa di
+                // SyncAttendanceDailyToMain, lihat ReapplyManualAttendanceOverrides
+                // untuk penjelasan lengkap.
+                $override = ManualAttendanceOverride::where([
+                    'school_id' => $row->school_id,
+                    'person_id' => $row->person_id,
+                    'person_type' => 'teacher',
+                    'date' => $row->date->toDateString(),
+                ])->first();
+
                 $attendance->fill([
                     'check_in' => $row->first_check_in,
                     'check_out' => $row->last_check_out,
-                    'status' => $row->status,
-                    'notes' => $row->notes
-                        ?? ($row->has_anomaly
-                            ? 'Ditandai anomali oleh sistem absensi — perlu verifikasi manual.'
-                            : $attendance->notes),
+                    'status' => $override->status ?? $row->status,
+                    'notes' => $override->notes
+                        ?? ($row->notes
+                            ?? ($row->has_anomaly
+                                ? 'Ditandai anomali oleh sistem absensi — perlu verifikasi manual.'
+                                : $attendance->notes)),
                 ]);
                 $attendance->save();
 

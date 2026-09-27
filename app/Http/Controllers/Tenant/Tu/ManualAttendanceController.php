@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant\Tu;
 use App\Http\Controllers\Controller;
 use App\Models\Absensi\AttendanceDaily;
 use App\Models\Absensi\PeopleRef;
+use App\Models\Absensi\ManualAttendanceOverride;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
@@ -94,6 +95,25 @@ class ManualAttendanceController extends Controller
             ]);
         }
 
+        // Catat sebagai override resmi DULU - ini yang jadi rujukan "benar"
+        // dan kebal ditimpa agregasi gateway berikutnya.
+        ManualAttendanceOverride::updateOrCreate(
+            [
+                'school_id' => $schoolId,
+                'person_id' => $validated['person_id'],
+                'person_type' => $validated['person_type'],
+                'date' => $validated['date'],
+            ],
+            [
+                'status' => $validated['status'],
+                'notes' => $validated['notes'] ?? null,
+                'recorded_by' => $request->user()->id,
+            ]
+        );
+
+        // Tulis juga ke attendance_daily untuk efek instan di dashboard -
+        // kalau nanti ditimpa gateway, ReapplyManualAttendanceOverrides yang
+        // mengembalikannya sesuai override di atas.
         $daily = AttendanceDaily::firstOrNew([
             'school_id' => $schoolId,
             'person_id' => $validated['person_id'],

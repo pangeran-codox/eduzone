@@ -150,6 +150,16 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
             Route::put('/{teacher}', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'update'])->name('update');
             Route::delete('/{teacher}', [\App\Http\Controllers\Tenant\Tu\TeacherController::class, 'destroy'])->name('destroy');
         });
+
+                // Data Staff
+        Route::prefix('staff')->name('staff.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'index'])->name('index');
+            Route::get('/create', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'create'])->name('create');
+            Route::post('/', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'store'])->name('store');
+            Route::get('/{staff}/edit', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'edit'])->name('edit');
+            Route::put('/{staff}', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'update'])->name('update');
+            Route::delete('/{staff}', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'destroy'])->name('destroy');
+        });
     });
 
     // ── Guru (guru_mapel + wali_kelas) ─────────────────────────────────
