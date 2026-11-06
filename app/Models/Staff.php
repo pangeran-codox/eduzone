@@ -79,10 +79,26 @@ class Staff extends Model
                 return $this->pendingSensitiveData[$key];
             }
 
-            return $this->sensitiveData?->{$key};
+                return $this->sensitiveData?->{$key};
         }
 
         return parent::__get($key);
+    }
+
+    /**
+     * Wajib ada: operator ?? / isset() / empty() memanggil __isset(), bukan
+     * __get(). Tanpa ini, $staff->nip ?? '' selalu '' karena Eloquent tidak
+     * kenal field sensitif yang di-proxy lewat __get() (bug ditemukan 27 Sep
+     * 2026 - form Edit selalu tampil kosong untuk field sensitif meski data
+     * tersimpan & terenkripsi dengan benar).
+     */
+    public function __isset($key)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            return $this->__get($key) !== null;
+        }
+
+        return parent::__isset($key);
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Http\Controllers\Superadmin\SchoolController;
 use App\Http\Controllers\Superadmin\UserController;
 use App\Http\Controllers\Superadmin\ActivityLogController;
 use App\Http\Controllers\Superadmin\SubscriptionController;
+use App\Http\Controllers\Superadmin\SchoolRegistrationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -43,6 +44,17 @@ Route::middleware('superadmin')->group(function () {
     Route::put('/{school}', [SchoolController::class, 'update'])->name('update');
     Route::delete('/{school}', [SchoolController::class, 'destroy'])->name('destroy');
     });
+
+    // School registrations management
+    Route::get('registrations', [SchoolRegistrationController::class, 'index'])->name('registrations.index');
+    Route::get('registrations/{registration}', [SchoolRegistrationController::class, 'show'])
+        ->whereUuid('registration')->name('registrations.show');
+    Route::post('registrations/{registration}/approve', [SchoolRegistrationController::class, 'approve'])
+        ->whereUuid('registration')->name('registrations.approve');
+    Route::post('registrations/{registration}/reject', [SchoolRegistrationController::class, 'reject'])
+        ->whereUuid('registration')->name('registrations.reject');
+    Route::post('registrations/{registration}/resend-password-setup', [SchoolRegistrationController::class, 'resendPasswordSetup'])
+        ->whereUuid('registration')->name('registrations.resend-password-setup');
 
     // Users management
     Route::get('/users', [UserController::class, 'index'])->name('users.index');

@@ -2,12 +2,36 @@
 
 namespace Database\Seeders;
 
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
+/**
+ * Seeder dataset demo EduZone (1 sekolah lengkap, 23 modul).
+ *
+ * CATATAN PENTING:
+ *  - Seeder ini NON-IDEMPOTENT: tujuannya membuat dataset baru. Bila sekolah dengan slug
+ *    SCHOOL_SLUG sudah ada, seeder berhenti dengan peringatan (tidak menggandakan data).
+ *    Untuk mengulang, hapus sekolah demo tersebut / pakai database kosong.
+ *  - Relasi antar-data TIDAK boleh random. `schedule` adalah source of truth: teaching attendance,
+ *    student subject attendance, dan lesson journal selalu diturunkan dari schedule
+ *    (teacher, class, subject, jam) dan siswa diambil dari kelas schedule tersebut.
+ *  - Password akun demo diambil dari env SEED_DEFAULT_PASSWORD (fallback 'password123').
+ *    JANGAN dipakai untuk akun pilot nyata.
+ */
 class SchoolSeeder extends Seeder
 {
+    private const SCHOOL_SLUG = 'sman1-surya-nusantara';
+
+    /** Nama hari (sesuai kolom schedules.day) => nomor hari Carbon (Senin = 1). */
+    private const DAY_OF_WEEK = ['Senin' => 1, 'Selasa' => 2, 'Rabu' => 3, 'Kamis' => 4, 'Jumat' => 5];
+
+    private ?string $passwordHash = null;
+
+    /** @var array<string,string> cache nama kolom primary key per tabel */
+    private array $pkCache = [];
+
     private array $periods = [
         ['07:00:00', '08:30:00'],
         ['08:30:00', '10:00:00'],
@@ -24,6 +48,19 @@ class SchoolSeeder extends Seeder
     ];
 
     public function run(): void
+    {
+        // Guard non-idempotent: jangan menggandakan dataset demo.
+        if (DB::table('schools')->where('slug', self::SCHOOL_SLUG)->exists()) {
+            $this->command?->warn('SchoolSeeder dilewati: sekolah "' . self::SCHOOL_SLUG . '" sudah ada. Seeder ini non-idempotent; hapus data demo lama atau pakai database kosong.');
+            return;
+        }
+
+        // Satu transaksi: bila gagal di tengah, semua di-rollback sehingga tidak ada
+        // data setengah jadi yang menghalangi seed ulang.
+        DB::transaction(fn () => $this->seedDemoSchool());
+    }
+
+    private function seedDemoSchool(): void
     {
         $start = microtime(true);
 
@@ -91,10 +128,10 @@ class SchoolSeeder extends Seeder
         $keuangan = $this->seedKeuangan($schoolId, $staffUsers);
 
         // ── 20. Dana BOS + Pengajuan Anggaran + Realisasi BOS ───────────────
-        $this->seedBos($schoolId, $staffUsers, $keuangan);
+        $bos = $this->seedBos($schoolId, $staffUsers, $keuangan);
 
         // ── 21. Audit Keuangan & Activity Logs ──────────────────────────────
-        $this->seedAuditAndActivity($schoolId, $staffUsers);
+        $this->seedAuditAndActivity($schoolId, $staffUsers, array_merge($keuangan, $bos));
 
         // ── 22. Toolman Reports ─────────────────────────────────────────────
         $this->seedToolmanReports($schoolId, $staffRecords['toolman']);
@@ -112,6 +149,110 @@ class SchoolSeeder extends Seeder
             ['Transaksi (masuk / keluar)', number_format($keuangan['total_pemasukan']) . ' / ' . number_format($keuangan['total_pengeluaran'])],
             ['Total tabel disentuh', '23 modul'],
         ]);
+        $this->command?->warn('Password akun demo berasal dari SEED_DEFAULT_PASSWORD (fallback "password123"). Jangan dipakai untuk akun pilot nyata.');
+    }
+
+    // =====================================================================
+    // HELPER
+    // =====================================================================
+
+    /**
+     * Pengganti Faker minimal (tanpa dependensi fakerphp/faker, yang tidak ada di image produksi
+     * karena composer --no-dev). Hanya menyediakan method yang dipakai seeder ini.
+     */
+    private function faker(): object
+    {
+        return new class {
+            private array $first = [
+                'Budi', 'Siti', 'Agus', 'Dewi', 'Rizky', 'Putri', 'Andi', 'Sri', 'Eko', 'Rina',
+                'Dedi', 'Ayu', 'Fajar', 'Nur', 'Hendra', 'Lestari', 'Bayu', 'Wulan', 'Imam', 'Intan',
+                'Yusuf', 'Maya', 'Rafi', 'Tia', 'Galih', 'Citra', 'Ilham', 'Nadia', 'Arif', 'Salsa',
+                'Dimas', 'Fitri', 'Joko', 'Mega', 'Tegar', 'Anisa', 'Reza', 'Laras', 'Wahyu', 'Kirana',
+            ];
+            private array $last = [
+                'Santoso', 'Wijaya', 'Pratama', 'Saputra', 'Hidayat', 'Kusuma', 'Nugroho', 'Lestari', 'Rahayu', 'Setiawan',
+                'Permana', 'Firmansyah', 'Maulana', 'Ramadhan', 'Utami', 'Purnama', 'Siregar', 'Nasution', 'Hakim', 'Yulianti',
+                'Susanto', 'Wibowo', 'Gunawan', 'Aditya', 'Prasetyo', 'Handayani', 'Suryani', 'Kurniawan', 'Mahendra', 'Anggraini',
+            ];
+            private array $words = [
+                'pembelajaran', 'siswa', 'materi', 'konsep', 'dasar', 'proses', 'hasil', 'contoh', 'sistem', 'data',
+                'analisis', 'kegiatan', 'tujuan', 'metode', 'latihan', 'diskusi', 'tugas', 'penilaian', 'kelompok', 'praktik',
+                'lingkungan', 'sekolah', 'budaya', 'sejarah', 'ilmu', 'pengetahuan', 'teknologi', 'energi', 'ruang', 'waktu',
+            ];
+
+            public function name(): string
+            {
+                return $this->first[array_rand($this->first)] . ' ' . $this->last[array_rand($this->last)];
+            }
+
+            public function randomElement(array $items): mixed
+            {
+                return $items[array_rand($items)];
+            }
+
+            public function dateTimeBetween(string $from, string $to): \DateTimeImmutable
+            {
+                $a = strtotime($from);
+                $b = strtotime($to);
+                if ($a > $b) {
+                    [$a, $b] = [$b, $a];
+                }
+
+                return (new \DateTimeImmutable())->setTimestamp(random_int($a, $b));
+            }
+
+            public function sentence(int $nbWords = 6): string
+            {
+                $picked = [];
+                for ($i = 0; $i < max(1, $nbWords); $i++) {
+                    $picked[] = $this->words[array_rand($this->words)];
+                }
+
+                return ucfirst(implode(' ', $picked)) . '.';
+            }
+        };
+    }
+
+    /** Hash password demo: dihitung sekali (bcrypt mahal), diambil dari env bila tersedia. */
+    private function hashedPassword(): string
+    {
+        return $this->passwordHash ??= bcrypt((string) env('SEED_DEFAULT_PASSWORD', 'password123'));
+    }
+
+    /** Nama kolom primary key (single-column) sebuah tabel, dibaca dari katalog PostgreSQL. */
+    private function pkColumn(string $table): string
+    {
+        if (! isset($this->pkCache[$table])) {
+            $row = DB::selectOne(
+                'SELECT a.attname AS col
+                   FROM pg_index i
+                   JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                  WHERE i.indrelid = ?::regclass AND i.indisprimary
+                  LIMIT 1',
+                [$table]
+            );
+            if (! $row) {
+                throw new \RuntimeException("Primary key tabel {$table} tidak ditemukan.");
+            }
+            $this->pkCache[$table] = $row->col;
+        }
+
+        return $this->pkCache[$table];
+    }
+
+    /** Insert satu baris lalu kembalikan ID barisnya (tanpa lastInsertId()). */
+    private function insertReturningId(string $table, array $row): int
+    {
+        return (int) DB::table($table)->insertGetId($row, $this->pkColumn($table));
+    }
+
+    /** Tanggal kejadian terakhir (sebelum hari ini) yang jatuh pada hari schedule. */
+    private function dateForSchedule(array $schedule, int $weeksBack = 0): string
+    {
+        return Carbon::now()
+            ->previous(self::DAY_OF_WEEK[$schedule['day']])
+            ->subWeeks($weeksBack)
+            ->toDateString();
     }
 
     // =====================================================================
@@ -124,7 +265,7 @@ class SchoolSeeder extends Seeder
         DB::table('schools')->insert([
             'id'                     => $schoolId,
             'name'                   => 'SMA Negeri 1 Surya Nusantara',
-            'slug'                   => 'sman1-surya-nusantara',
+            'slug'                   => self::SCHOOL_SLUG,
             'npsn'                   => '20104567',
             'nss'                    => '3010789012',
             'level'                  => 'SMA',
@@ -193,7 +334,7 @@ class SchoolSeeder extends Seeder
                 'role'       => $role,
                 'username'   => $username,
                 'email'      => $email,
-                'password'   => bcrypt('password123'),
+                'password'   => $this->hashedPassword(),
                 'is_active'  => true,
                 'created_at' => now()->subMonths(6),
                 'updated_at' => now(),
@@ -209,7 +350,7 @@ class SchoolSeeder extends Seeder
     // =====================================================================
     private function seedAcademicCore(string $schoolId, string $suffix): array
     {
-        $faker = fake('id_ID');
+        $faker = $this->faker();
         $grades = ['X', 'XI', 'XII'];
         $rombelLetters = ['A', 'B'];
         $studentsPerClass = 25;
@@ -290,7 +431,7 @@ class SchoolSeeder extends Seeder
                 'role'       => $isHomeroom ? 'wali_kelas' : 'guru_mapel',
                 'username'   => "guru{$i}_{$suffix}",
                 'email'      => $email,
-                'password'   => bcrypt('password123'),
+                'password'   => $this->hashedPassword(),
                 'is_active'  => true,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -351,7 +492,7 @@ class SchoolSeeder extends Seeder
                     'role'       => 'siswa',
                     'username'   => "siswa{$globalIdx}_{$suffix}",
                     'email'      => $email,
-                    'password'   => bcrypt('password123'),
+                    'password'   => $this->hashedPassword(),
                     'is_active'  => true,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -388,6 +529,7 @@ class SchoolSeeder extends Seeder
         // Schedules (12 kelas x 5 hari x 4 periode = 240 schedule)
         $scheduleRows = [];
         $scheduleIds  = [];
+        $schedules    = []; // metadata lengkap: schedule = source of truth untuk data turunan
         foreach ($classes as $classIndex => $class) {
             $slotIndex = 0;
             foreach ($this->days as $day) {
@@ -414,13 +556,26 @@ class SchoolSeeder extends Seeder
                         'updated_at'  => now(),
                     ];
                     $scheduleIds[] = $scheduleId;
+                    $schedules[] = [
+                        'id'          => $scheduleId,
+                        'school_id'   => $schoolId,
+                        'teacher_id'  => $teacherId,
+                        'subject'     => $subject,
+                        'class_id'    => $class['id'],
+                        'grade'       => $class['grade'],
+                        'major'       => $class['major_abbr'],
+                        'class_group' => $class['class_group'],
+                        'day'         => $day,
+                        'start_time'  => $start,
+                        'end_time'    => $end,
+                    ];
                     $slotIndex++;
                 }
             }
         }
         foreach (array_chunk($scheduleRows, 500) as $chunk) DB::table('schedules')->insert($chunk);
 
-        return compact('majorIds', 'classes', 'teachers', 'teacherUserIds', 'homeroomTeachers', 'students', 'studentUserIds', 'scheduleIds', 'subjectTeacherMap');
+        return compact('majorIds', 'classes', 'teachers', 'teacherUserIds', 'homeroomTeachers', 'students', 'studentUserIds', 'scheduleIds', 'schedules', 'subjectTeacherMap');
     }
 
     // =====================================================================
@@ -428,7 +583,7 @@ class SchoolSeeder extends Seeder
     // =====================================================================
     private function seedStaffRecords(string $schoolId, string $suffix, array $staffUsers): array
     {
-        $faker = fake('id_ID');
+        $faker = $this->faker();
         $map = [
             'kepsek'    => ['Kepala Sekolah',              $staffUsers['kepsek']],
             'kurikulum' => ['Wakil Kepala Sekolah Bid. Kurikulum', $staffUsers['kurikulum']],
@@ -514,7 +669,7 @@ class SchoolSeeder extends Seeder
     // =====================================================================
     private function seedExams(string $schoolId, string $suffix, array $academic): void
     {
-        $faker = fake('id_ID');
+        $faker = $this->faker();
         $exams = [];
 
         for ($i = 0; $i < 5; $i++) {
@@ -549,7 +704,7 @@ class SchoolSeeder extends Seeder
                     'school_id'     => $schoolId,
                     'exam_id'       => $exam['id'],
                     'teacher_id'    => $exam['teacher_id'],
-                    'question'      => $faker->sentence(rand(8, 18)) . '?',
+                    'question'      => rtrim($faker->sentence(rand(8, 18)), '.') . '?',
                     'option_a'      => $faker->sentence(4),
                     'option_b'      => $faker->sentence(4),
                     'option_c'      => $faker->sentence(4),
@@ -942,42 +1097,51 @@ class SchoolSeeder extends Seeder
     // =====================================================================
     private function seedTeachingAttendance(string $schoolId, array $academic): void
     {
-        $teachingRows = [];
+        $teachingRows   = [];
         $subjectAttRows = [];
-        $schedulesSlice = array_slice($academic['scheduleIds'], 0, 15);
-        $statuses = ['Hadir', 'Hadir', 'Hadir', 'Hadir', 'Izin'];
+        $schedules      = $academic['schedules'];
+        $statuses       = ['Hadir', 'Hadir', 'Hadir', 'Hadir', 'Izin'];
+        $total          = 15;
+        // Sebar sampel schedule ke banyak kelas (bukan 15 slot pertama = 1 kelas saja).
+        $step           = max(1, intdiv(count($schedules), $total));
 
-        foreach ($schedulesSlice as $idx => $scheduleId) {
-            // Cari schedule dari DB via query quick - tapi kita sudah punya data di academic['schedulesRow']? Tidak, cuma scheduleIds.
-            // Alih-alih query, kita pick teacher random + jadwal waktu dari periods.
-            $teacher = $academic['teachers'][$idx % count($academic['teachers'])];
-            $date    = now()->subWeekdays(($idx % 5) + 1)->toDateString();
+        $studentsByClass = collect($academic['students'])->groupBy('class_id');
+
+        for ($idx = 0; $idx < $total; $idx++) {
+            // Schedule dipilih dulu; teacher, kelas, mapel & jam diturunkan dari schedule itu.
+            $schedule   = $schedules[($idx * $step) % count($schedules)];
+            $date       = $this->dateForSchedule($schedule, intdiv($idx, 5));
             $teachingId = Str::uuid()->toString();
-            $status = $statuses[$idx % count($statuses)];
+            $status     = $statuses[$idx % count($statuses)];
 
             $teachingRows[] = [
                 'id'           => $teachingId,
                 'school_id'    => $schoolId,
-                'schedule_id'  => $scheduleId,
-                'teacher_id'   => $teacher['id'],
+                'schedule_id'  => $schedule['id'],
+                'teacher_id'   => $schedule['teacher_id'],
                 'date'         => $date,
-                'start_time'   => $this->periods[$idx % 4][0],
-                'end_time'     => $this->periods[$idx % 4][1],
+                'start_time'   => $schedule['start_time'],
+                'end_time'     => $schedule['end_time'],
                 'topic'        => 'Pembahasan materi pokok bab terbaru dengan latihan soal dan tanya jawab interaktif.',
                 'notes'        => $status === 'Izin' ? 'Guru berhalangan, diganti oleh guru piket dengan tugas mandiri.' : null,
                 'created_at'   => now(),
             ];
 
             if ($status === 'Hadir') {
-                $randomStudents = collect($academic['students'])->random(15);
-                foreach ($randomStudents as $stu) {
-                    $stuStatus = $statuses[(array_rand($statuses))];
+                // Siswa hanya dari kelas pada schedule ini.
+                $classStudents = $studentsByClass->get($schedule['class_id'], collect());
+                if ($classStudents->isEmpty()) {
+                    continue;
+                }
+
+                foreach ($classStudents->random(min(15, $classStudents->count())) as $stu) {
+                    $stuStatus = $statuses[array_rand($statuses)];
                     $subjectAttRows[] = [
                         'id'                    => Str::uuid()->toString(),
                         'school_id'             => $schoolId,
                         'teaching_attendance_id'=> $teachingId,
                         'student_id'            => $stu['id'],
-                        'schedule_id'           => $scheduleId,
+                        'schedule_id'           => $schedule['id'],
                         'date'                  => $date,
                         'status'                => $stuStatus,
                         'notes'                 => $stuStatus === 'Izin' ? 'Izin istirahat di UKS karena sakit kepala.' : null,
@@ -995,23 +1159,25 @@ class SchoolSeeder extends Seeder
     // =====================================================================
     private function seedLessonJournals(string $schoolId, array $academic): void
     {
-        $rows = [];
-        for ($i = 0; $i < 30; $i++) {
-            $teacher = $academic['teachers'][$i % count($academic['teachers'])];
-            $subject = $this->subjectPool[$i % count($this->subjectPool)];
-            $class   = $academic['classes'][$i % count($academic['classes'])];
-            $scheduleId = $academic['scheduleIds'][$i % count($academic['scheduleIds'])];
+        $rows      = [];
+        $schedules = $academic['schedules'];
+        $total     = 30;
+        $step      = max(1, intdiv(count($schedules), $total));
+
+        for ($i = 0; $i < $total; $i++) {
+            // Teacher, kelas, mapel diturunkan dari schedule — bukan dipilih independen.
+            $schedule = $schedules[($i * $step) % count($schedules)];
 
             $rows[] = [
                 'id'           => Str::uuid()->toString(),
                 'school_id'    => $schoolId,
-                'teacher_id'   => $teacher['id'],
-                'schedule_id'  => $scheduleId,
-                'date'         => now()->subWeekdays(($i % 8) + 1)->toDateString(),
-                'subject'      => $subject,
-                'grade'        => $class['grade'],
-                'class_id'     => $class['id'],
-                'topic'        => 'Pembahasan ' . $subject . ': topik inti minggu ini dengan pendalaman soal HOTS dan pengayaan.',
+                'teacher_id'   => $schedule['teacher_id'],
+                'schedule_id'  => $schedule['id'],
+                'date'         => $this->dateForSchedule($schedule, $i % 3),
+                'subject'      => $schedule['subject'],
+                'grade'        => $schedule['grade'],
+                'class_id'     => $schedule['class_id'],
+                'topic'        => 'Pembahasan ' . $schedule['subject'] . ': topik inti minggu ini dengan pendalaman soal HOTS dan pengayaan.',
                 'notes'        => 'Mayoritas siswa aktif bertanya. Tugas individu dikumpulkan 95%. Beberapa siswa perlu bimbingan tambahan di luar jam pelajaran.',
                 'created_at'   => now(),
                 'updated_at'   => now(),
@@ -1034,15 +1200,14 @@ class SchoolSeeder extends Seeder
             ['Komite / Infaq',         'Iuran sukarela orang tua siswa melalui komite sekolah.'],
             ['Kegiatan Wirausaha',     'Hasil penjualan kantin, koperasi sekolah, dan usaha produksi siswa.'],
         ];
-        foreach ($katMasuk as $i => [$nama, $desc]) {
-            DB::table('kategori_pemasukan')->insert([
+        foreach ($katMasuk as [$nama, $desc]) {
+            $katMasukIds[] = $this->insertReturningId('kategori_pemasukan', [
                 'school_id'    => $schoolId,
                 'nama_kategori'=> $nama,
                 'deskripsi'    => $desc,
                 'is_active'    => true,
                 'created_at'   => now(),
             ]);
-            $katMasukIds[] = DB::getPdo()->lastInsertId();
         }
 
         // Kategori Pengeluaran
@@ -1054,19 +1219,18 @@ class SchoolSeeder extends Seeder
             ['Kegiatan Pembelajaran',     'Modul, alat peraga, cetak soal, konsumsi rapat, lomba.'],
             ['Pengembangan Kualitas',     'Diklat guru, workshop, seminar, studi banding.'],
         ];
-        foreach ($katKeluar as $i => [$nama, $desc]) {
-            DB::table('kategori_pengeluaran')->insert([
+        foreach ($katKeluar as [$nama, $desc]) {
+            $katKeluarIds[] = $this->insertReturningId('kategori_pengeluaran', [
                 'school_id'    => $schoolId,
                 'nama_kategori'=> $nama,
                 'deskripsi'    => $desc,
                 'is_active'    => true,
                 'created_at'   => now(),
             ]);
-            $katKeluarIds[] = DB::getPdo()->lastInsertId();
         }
 
-        // Transaksi Pemasukan (12 transaksi)
-        $pemasukanRows = [];
+        // Transaksi Pemasukan (12 transaksi) — ID tiap record disimpan eksplisit
+        $pemasukanIds = [];
         for ($i = 0; $i < 12; $i++) {
             $bulan  = 1 + ($i % 6);
             $tahun  = now()->year;
@@ -1078,7 +1242,7 @@ class SchoolSeeder extends Seeder
                 default => rand(2000000, 15000000), // Wirausaha
             };
             $katIdx = $i % count($katMasukIds);
-            $pemasukanRows[] = [
+            $pemasukanIds[] = $this->insertReturningId('transaksi_pemasukan', [
                 'school_id'         => $schoolId,
                 'no_transaksi'      => "IN/SM1S/{$tahun}/" . str_pad((string) ($i + 1), 4, '0', STR_PAD_LEFT),
                 'tanggal_transaksi' => "{$tahun}-" . str_pad((string) $bulan, 2, '0', STR_PAD_LEFT) . '-15',
@@ -1104,13 +1268,12 @@ class SchoolSeeder extends Seeder
                 'verified_at'       => now(),
                 'created_at'        => now(),
                 'updated_at'        => now(),
-            ];
+            ]);
         }
-        DB::table('transaksi_pemasukan')->insert($pemasukanRows);
-        $idPemasukanAwal = DB::getPdo()->lastInsertId();
 
-        // Transaksi Pengeluaran (18 transaksi)
-        $pengeluaranRows = [];
+        // Transaksi Pengeluaran (18 transaksi) — ID tiap record disimpan eksplisit
+        $pengeluaranIds    = [];
+        $pengeluaranBosIds = []; // subset yang is_from_bos = true (untuk realisasi BOS)
         for ($i = 0; $i < 18; $i++) {
             $bulan = 1 + ($i % 8);
             $tahun = now()->year;
@@ -1123,7 +1286,7 @@ class SchoolSeeder extends Seeder
                 default => rand(1500000, 8000000), // Kualitas
             };
             $fromBos = ($i % 3 === 0 && $katIdx !== 0); // beberapa item pakai BOS
-            $pengeluaranRows[] = [
+            $id = $this->insertReturningId('transaksi_pengeluaran', [
                 'school_id'         => $schoolId,
                 'no_transaksi'      => "OUT/SM1S/{$tahun}/" . str_pad((string) ($i + 1), 4, '0', STR_PAD_LEFT),
                 'tanggal_transaksi' => "{$tahun}-" . str_pad((string) $bulan, 2, '0', STR_PAD_LEFT) . '-' . (10 + ($i % 18)),
@@ -1147,30 +1310,33 @@ class SchoolSeeder extends Seeder
                 'created_by'        => $staffUsers['tu'],
                 'created_at'        => now(),
                 'updated_at'        => now(),
-            ];
+            ]);
+            $pengeluaranIds[] = $id;
+            if ($fromBos) {
+                $pengeluaranBosIds[] = $id;
+            }
         }
-        DB::table('transaksi_pengeluaran')->insert($pengeluaranRows);
-        $idPengeluaranAwal = DB::getPdo()->lastInsertId();
 
         return [
-            'kat_masuk_ids'   => $katMasukIds,
-            'kat_keluar_ids'  => $katKeluarIds,
-            'id_pemasukan_awal'  => (int) $idPemasukanAwal,
-            'id_pengeluaran_awal'=> (int) $idPengeluaranAwal,
-            'total_pemasukan'   => count($pemasukanRows),
-            'total_pengeluaran' => count($pengeluaranRows),
+            'kat_masuk_ids'       => $katMasukIds,
+            'kat_keluar_ids'      => $katKeluarIds,
+            'pemasukan_ids'       => $pemasukanIds,
+            'pengeluaran_ids'     => $pengeluaranIds,
+            'pengeluaran_bos_ids' => $pengeluaranBosIds,
+            'total_pemasukan'     => count($pemasukanIds),
+            'total_pengeluaran'   => count($pengeluaranIds),
         ];
     }
 
     // =====================================================================
     // 20. BOS, PENGAJUAN ANGGARAN, REALISASI
     // =====================================================================
-    private function seedBos(string $schoolId, array $staffUsers, array $keuangan): void
+    private function seedBos(string $schoolId, array $staffUsers, array $keuangan): array
     {
         // 2 record Dana BOS
-        $idBosList = [];
+        $bosIds = [];
         for ($i = 0; $i < 2; $i++) {
-            DB::table('dana_bos')->insert([
+            $bosIds[] = $this->insertReturningId('dana_bos', [
                 'school_id'       => $schoolId,
                 'tahun_ajaran'    => '2026/2027',
                 'semester'        => $i === 0 ? 'Ganjil' : 'Genap',
@@ -1180,12 +1346,15 @@ class SchoolSeeder extends Seeder
                 'keterangan'      => "Pencairan BOS Reguler Tahun Ajaran 2026/2027 Tahap " . ($i + 1) . " sesuai SK Dinas Pendidikan.",
                 'created_at'      => now(),
             ]);
-            $idBosList[] = DB::getPdo()->lastInsertId();
         }
 
         // 3 pengajuan anggaran
+        $pengajuanIds = [];
         for ($i = 0; $i < 3; $i++) {
-            DB::table('pengajuan_anggaran')->insert([
+            $status     = ['Approved', 'Approved', 'Pending'][$i];
+            $isReviewed = $status !== 'Pending'; // Pending = belum direview -> reviewer & waktu review kosong
+
+            $pengajuanIds[] = $this->insertReturningId('pengajuan_anggaran', [
                 'school_id'             => $schoolId,
                 'judul'                 => ['Pengadaan Laptop Lab Komputer', 'Perbaikan Atap Gedung A', 'Biaya Study Tour ke Jakarta'][ $i ],
                 'kategori_pengeluaran'  => $keuangan['kat_keluar_ids'][ $i % count($keuangan['kat_keluar_ids']) ],
@@ -1195,31 +1364,19 @@ class SchoolSeeder extends Seeder
                                             'Perbaikan 120 m2 genting bocor dan pengecatan plafon gedung A.',
                                             'Biaya transportasi, konsumsi, tiket wisata edukasi 120 siswa kelas XII.'
                                             ][$i],
-                'status'                => ['Approved', 'Approved', 'Pending'][$i],
+                'status'                => $status,
                 'catatan_reviewer'      => $i === 2 ? 'Perlu perhitungan ulang biaya akomodasi. Akan direview minggu depan.' : 'Disetujui sesuai RAPBS tahun berjalan.',
-                'reviewed_by'           => $staffUsers['kepsek'],
-                'reviewed_at'           => now()->subDays(5 + $i * 2),
+                'reviewed_by'           => $isReviewed ? $staffUsers['kepsek'] : null,
+                'reviewed_at'           => $isReviewed ? now()->subDays(5 + $i * 2) : null,
                 'created_by'            => $staffUsers['tu'],
                 'created_at'            => now(),
             ]);
         }
 
-        // Realisasi: hubungkan 1 record BOS ke 2 pengeluaran is_from_bos
-        $pengeluaranBosIds = collect(range($keuangan['id_pengeluaran_awal'] - (count($keuangan['kat_keluar_ids']) - 1), $keuangan['id_pengeluaran_awal']))
-            ->take(2)->values();
-        // catatan: lastInsertId bersifat per koneksi; karena batch insert maka ini berurutan. Kita gunakan pengeluaran dengan indeks terbaru.
-        // Karena query cukup rumit, kita ambil 2 pengeluaran pertama via query sederhana.
-        $pengeluaranBosIds = DB::table('transaksi_pengeluaran')
-            ->where('school_id', $schoolId)
-            ->where('is_from_bos', true)
-            ->orderBy('id_pengeluaran')
-            ->limit(2)
-            ->pluck('id_pengeluaran')
-            ->all();
-        $idBosPertama = DB::table('dana_bos')->where('school_id', $schoolId)->orderBy('id_bos')->limit(1)->value('id_bos');
-
+        // Realisasi: hubungkan BOS pertama ke 2 pengeluaran is_from_bos (ID dari seedKeuangan, tanpa query ulang)
+        $idBosPertama = $bosIds[0];
         $realisasiRows = [];
-        foreach ($pengeluaranBosIds as $idPengeluaran) {
+        foreach (array_slice($keuangan['pengeluaran_bos_ids'], 0, 2) as $idPengeluaran) {
             $realisasiRows[] = [
                 'id'             => Str::uuid()->toString(),
                 'school_id'      => $schoolId,
@@ -1229,23 +1386,39 @@ class SchoolSeeder extends Seeder
             ];
         }
         if (! empty($realisasiRows)) DB::table('realisasi_bos')->insert($realisasiRows);
+
+        return [
+            'bos_ids'       => $bosIds,
+            'pengajuan_ids' => $pengajuanIds,
+        ];
     }
 
     // =====================================================================
     // 21. AUDIT KEUANGAN & ACTIVITY LOGS
     // =====================================================================
-    private function seedAuditAndActivity(string $schoolId, array $staffUsers): void
+    private function seedAuditAndActivity(string $schoolId, array $staffUsers, array $refs): void
     {
-        // Audit Keuangan (10 sample)
+        // Audit Keuangan (10 sample) — id_record WAJIB menunjuk record nyata hasil seeder ini.
+        $recordIds = [
+            'transaksi_pemasukan'   => $refs['pemasukan_ids'],
+            'transaksi_pengeluaran' => $refs['pengeluaran_ids'],
+            'dana_bos'              => $refs['bos_ids'],
+            'pengajuan_anggaran'    => $refs['pengajuan_ids'],
+        ];
+        $tabelList = array_keys($recordIds);
+
         $auditRows = [];
         for ($i = 0; $i < 10; $i++) {
-            $action = ['CREATE', 'UPDATE', 'APPROVE'][ $i % 3 ];
-            $tabel  = ['transaksi_pemasukan', 'transaksi_pengeluaran', 'dana_bos', 'pengajuan_anggaran'][ $i % 4 ];
+            $action  = ['CREATE', 'UPDATE', 'APPROVE'][ $i % 3 ];
+            $tabel   = $tabelList[ $i % count($tabelList) ];
+            $ids     = $recordIds[$tabel];
+            $idRecord = $ids[intdiv($i, count($tabelList)) % count($ids)];
+
             $auditRows[] = [
                 'id'         => Str::uuid()->toString(),
                 'school_id'  => $schoolId,
                 'tabel'      => $tabel,
-                'id_record'  => rand(1, 20),
+                'id_record'  => $idRecord,
                 'aksi'       => $action,
                 'data_lama'  => $action !== 'CREATE' ? json_encode(['jumlah_sebelumnya' => rand(1000000, 5000000), 'status_sebelumnya' => 'Pending']) : null,
                 'data_baru'  => json_encode(['jumlah' => rand(2000000, 15000000), 'status' => $action === 'APPROVE' ? 'Verified' : 'Pending']),

@@ -11,10 +11,16 @@
 
     <div class="t-card p-5 flex items-center justify-between">
         <div>
-            <div class="font-semibold">{{ $subject_name }}</div>
+            <div class="font-semibold">
+                {{ $subject_name }}
+                @if($class_name)<span class="font-normal text-gray-500">— {{ $class_name }}</span>@endif
+            </div>
             <div class="text-xs text-gray-500">
                 {{ $start_time }} – {{ $end_time }} · {{ \Illuminate\Support\Carbon::parse($date)->translatedFormat('l, d M Y') }}
             </div>
+            @if($substitution_note)
+                <div class="mt-1"><span class="badge badge-gold">{{ $substitution_note }}</span></div>
+            @endif
         </div>
         <span class="badge badge-green">{{ $hadir }} / {{ $total_siswa }} hadir</span>
     </div>

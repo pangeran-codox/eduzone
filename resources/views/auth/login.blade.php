@@ -188,6 +188,11 @@
                     Butuh bantuan akses? Hubungi tata usaha sekolah Anda.
                 </p>
 
+                <p class="text-xs text-center mt-3" style="color:#9A9A8E;">
+                    Sekolah Anda belum terdaftar?
+                    <a href="{{ route('guest.school-registration.create') }}" class="font-medium hover:underline" style="color:#1B3A34;">Daftarkan sekolah</a>
+                </p>
+
                 @if (Route::has('superadmin.login'))
                     <div class="text-center mt-3">
                         <a href="{{ route('superadmin.login') }}" class="text-xs hover:underline" style="color:#8A8A80;">

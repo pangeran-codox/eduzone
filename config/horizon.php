@@ -235,15 +235,15 @@ return [
     'environments' => [
         'production' => [
             'supervisor-1' => [
-                'maxProcesses'       => 10,
+                'maxProcesses'       => 2,
                 'balanceMaxShift'    => 1,
                 'balanceCooldown'    => 3,
             ],
             'supervisor-notifications' => [
-                'maxProcesses' => 5,
+                'maxProcesses' => 1,
             ],
             'supervisor-reports' => [
-                'maxProcesses' => 3,
+                'maxProcesses' => 1,
             ],
         ],
 

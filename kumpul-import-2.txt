@@ -1,0 +1,381 @@
+﻿=== app\Models\Teacher.php ===
+<?php
+
+namespace App\Models;
+
+use App\Models\Concerns\HasPhotoAccessToken;
+use App\Multitenancy\Concerns\BelongsToSchool;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
+class Teacher extends Model
+{
+    use BelongsToSchool, HasUuids, HasPhotoAccessToken;
+
+    protected $table = 'teachers';
+
+    protected $primaryKey = 'id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'school_id',
+        'user_id',
+        'nip_hash',
+        'nuptk_hash',
+        'full_name',
+        'email', // plain - dipakai aktif untuk notifikasi
+        'gender',
+        'last_education',
+        'education_major',
+        'employment_status',
+        'joined_date',
+        'major_id',
+        'is_homeroom',
+        'photo',
+        'is_active',
+    ];
+
+    protected $casts = [
+        'joined_date' => 'date',
+        'is_homeroom' => 'boolean',
+        'is_active' => 'boolean',
+    ];
+
+    /**
+     * Field sensitif yang sebenarnya disimpan di tabel teacher_sensitive_data,
+     * tapi diakses transparan lewat $teacher->nip, $teacher->address, dst.
+     */
+    protected static array $proxiedSensitiveFields = [
+        'nip',
+        'nuptk',
+        'birth_place',
+        'birth_date',
+        'religion',
+        'address',
+        'phone',
+    ];
+
+    /** Field yang juga punya kolom hash di tabel teachers untuk searchable exact-match */
+    protected static array $hashedFields = ['nip', 'nuptk'];
+
+    /** Penampung sementara field sensitif yang di-set lewat __set, baru benar2 disimpan saat save() */
+    protected array $pendingSensitiveData = [];
+
+    // Relationships
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function major(): BelongsTo
+    {
+        return $this->belongsTo(Major::class, 'major_id');
+    }
+
+    public function sensitiveData(): HasOne
+    {
+        return $this->hasOne(TeacherSensitiveData::class, 'teacher_id');
+    }
+
+    /**
+     * Proxy GET untuk field sensitif: $teacher->nip, $teacher->address, dst.
+     */
+    public function __get($key)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            if (array_key_exists($key, $this->pendingSensitiveData)) {
+                return $this->pendingSensitiveData[$key];
+            }
+
+                return $this->sensitiveData?->{$key};
+        }
+
+        return parent::__get($key);
+    }
+
+    /**
+     * Wajib ada: operator ?? / isset() / empty() memanggil __isset(), bukan
+     * __get(). Tanpa ini, $teacher->nip ?? '' selalu '' karena Eloquent tidak
+     * kenal field sensitif yang di-proxy lewat __get() (bug ditemukan 27 Sep
+     * 2026 - form Edit selalu tampil kosong untuk field sensitif meski data
+     * tersimpan & terenkripsi dengan benar).
+     */
+    public function __isset($key)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            return $this->__get($key) !== null;
+        }
+
+        return parent::__isset($key);
+    }
+
+    /**
+     * Proxy SET untuk field sensitif: $teacher->nip = '...'.
+     * TIDAK langsung save ke DB - ditampung di $pendingSensitiveData,
+     * baru benar2 disimpan saat $teacher->save() dipanggil (1x save = 1 baris audit log).
+     */
+    public function __set($key, $value)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            $this->pendingSensitiveData[$key] = $value;
+
+            if (in_array($key, static::$hashedFields, true)) {
+                $hashColumn = "{$key}_hash";
+                $this->attributes[$hashColumn] = $value ? hash('sha256', $value) : null;
+            }
+
+            return;
+        }
+
+        parent::__set($key, $value);
+    }
+
+    /**
+     * Override save(): simpan dulu data utama (tabel teachers), lalu flush
+     * pending sensitive data ke tabel teacher_sensitive_data dalam 1x save.
+     *
+     * CATATAN (2 Sep 2026): $sensitive->save() bisa melempar
+     * SensitiveDataEncryptionException (gRPC gagal) - nembus ke atas,
+     * controller pemanggil WAJIB menangkapnya.
+     */
+    public function save(array $options = []): bool
+    {
+        $saved = parent::save($options);
+
+        if ($saved && !empty($this->pendingSensitiveData)) {
+            $sensitive = $this->sensitiveData ?? $this->sensitiveData()->make([
+                'school_id' => $this->school_id,
+            ]);
+
+            foreach ($this->pendingSensitiveData as $field => $value) {
+                $sensitive->{$field} = $value;
+            }
+
+            $sensitive->teacher_id = $this->id;
+            $sensitive->school_id = $this->school_id;
+            $sensitive->save();
+
+            $this->setRelation('sensitiveData', $sensitive);
+            $this->pendingSensitiveData = [];
+        }
+
+        return $saved;
+    }
+
+    /**
+     * Helper untuk pencarian exact-match by NIP.
+     */
+    public static function findByNip(string $nip): ?self
+    {
+        return static::where('nip_hash', hash('sha256', $nip))->first();
+    }
+
+    /**
+     * Helper untuk pencarian exact-match by NUPTK.
+     */
+    public static function findByNuptk(string $nuptk): ?self
+    {
+        return static::where('nuptk_hash', hash('sha256', $nuptk))->first();
+    }
+}
+=== app\Models\Major.php ===
+<?php
+
+namespace App\Models;
+
+use App\Multitenancy\Concerns\BelongsToSchool;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Major extends Model
+{
+    use BelongsToSchool, HasUuids;
+
+    protected $table = 'majors';
+
+    protected $primaryKey = 'id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'school_id',
+        'name',
+        'abbreviation',
+        'description',
+        'is_active',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
+    // Relationships
+    public function classes(): HasMany
+    {
+        return $this->hasMany(SchoolClass::class, 'major_id');
+    }
+
+    public function teachers(): HasMany
+    {
+        return $this->hasMany(Teacher::class, 'major_id');
+    }
+
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class, 'major_id');
+    }
+}
+=== app\Rules\UniqueHashedField.php ===
+<?php
+
+namespace App\Rules;
+
+use Closure;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Validasi uniqueness untuk field yang disimpan sebagai hash (bukan plain),
+ * misal nisn_hash, nis_hash di tabel students.
+ *
+ * Penggunaan:
+ *   'nisn' => ['required', new UniqueHashedField('students', 'nisn_hash')],
+ *
+ * Untuk update (exclude ID sendiri):
+ *   'nisn' => ['required', (new UniqueHashedField('students', 'nisn_hash'))->ignore($student->id)],
+ */
+class UniqueHashedField implements ValidationRule
+{
+    protected ?string $ignoreId = null;
+
+    protected string $idColumn = 'id';
+
+    public function __construct(
+        protected string $table,
+        protected string $hashColumn,
+    ) {
+    }
+
+    public function ignore(string $id, string $idColumn = 'id'): static
+    {
+        $this->ignoreId = $id;
+        $this->idColumn = $idColumn;
+
+        return $this;
+    }
+
+    public function validate(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (empty($value)) {
+            return;
+        }
+
+        $hash = hash('sha256', $value);
+
+        $query = DB::table($this->table)->where($this->hashColumn, $hash);
+
+        if ($this->ignoreId !== null) {
+            $query->where($this->idColumn, '!=', $this->ignoreId);
+        }
+
+        if ($query->exists()) {
+            $fail("Data {$attribute} sudah terdaftar.");
+        }
+    }
+}
+=== db:table classes ===
+ 
+     p u b l i c . c l a s s e s   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      
+     C o l u m n s   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   1 1      
+     S i z e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   4 8 . 0 0   K B      
+  
+     C o l u m n   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   T y p e      
+     i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     s c h o o l _ i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     g r a d e   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     m a j o r _ i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     c l a s s _ g r o u p   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 1 0 )      
+     a c a d e m i c _ y e a r   v a r c h a r   .   ' 2 0 2 5 / 2 0 2 6 ' : : c h a r a c t e r   v a r y i n g   c h a r a c t e r   v a r y i n g ( 1 0 )      
+     n a m a _ k e l a s   v a r c h a r ,   n u l l a b l e   . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     k a p a s i t a s   i n t 4   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   3 6   i n t e g e r      
+     i s _ a c t i v e   b o o l   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   t r u e   b o o l e a n      
+     c r e a t e d _ a t   t i m e s t a m p ,   n u l l a b l e   . . . . . . . . . . . . . .   t i m e s t a m p ( 0 )   w i t h o u t   t i m e   z o n e      
+     u p d a t e d _ a t   t i m e s t a m p ,   n u l l a b l e   . . . . . . . . . . . . . .   t i m e s t a m p ( 0 )   w i t h o u t   t i m e   z o n e      
+  
+     I n d e x   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      
+     c l a s s e s _ p k e y   i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   b t r e e ,   p r i m a r y      
+     c l a s s e s _ s c h o o l _ i d _ g r a d e _ m a j o r _ i d _ c l a s s _ g r o u p _ a c a d e m i c _ y e a r _ u n i q   s c h o o l _ i d ,   g r a d e ,   m a j o r _ i d ,   c l a s s _ g r o u p ,   a c a d e m i c _ y e a r     b t r e e ,   c o m p o u n d ,   u n i q u e      
+  
+     F o r e i g n   K e y   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   O n   U p d a t e   /   O n   D e l e t e      
+     c l a s s e s _ m a j o r _ i d _ f o r e i g n   m a j o r _ i d   r e f e r e n c e s   i d   o n   m a j o r s     n o   a c t i o n   /   c a s c a d e      
+     c l a s s e s _ s c h o o l _ i d _ f o r e i g n   s c h o o l _ i d   r e f e r e n c e s   i d   o n   s c h o o l s     n o   a c t i o n   /   c a s c a d e      
+  
+ === db:table majors ===
+ 
+     p u b l i c . m a j o r s   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      
+     C o l u m n s   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   8      
+     S i z e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   3 2 . 0 0   K B      
+  
+     C o l u m n   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   T y p e      
+     i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     s c h o o l _ i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     n a m e   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 1 0 0 )      
+     a b b r e v i a t i o n   v a r c h a r ,   n u l l a b l e   . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     d e s c r i p t i o n   t e x t ,   n u l l a b l e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   t e x t      
+     i s _ a c t i v e   b o o l   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   t r u e   b o o l e a n      
+     c r e a t e d _ a t   t i m e s t a m p ,   n u l l a b l e   . . . . . . . . . . . . . .   t i m e s t a m p ( 0 )   w i t h o u t   t i m e   z o n e      
+     u p d a t e d _ a t   t i m e s t a m p ,   n u l l a b l e   . . . . . . . . . . . . . .   t i m e s t a m p ( 0 )   w i t h o u t   t i m e   z o n e      
+  
+     I n d e x   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      
+     m a j o r s _ p k e y   i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   b t r e e ,   p r i m a r y      
+  
+     F o r e i g n   K e y   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   O n   U p d a t e   /   O n   D e l e t e      
+     m a j o r s _ s c h o o l _ i d _ f o r e i g n   s c h o o l _ i d   r e f e r e n c e s   i d   o n   s c h o o l s     n o   a c t i o n   /   c a s c a d e      
+  
+ === db:table schedules ===
+ 
+     p u b l i c . s c h e d u l e s   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      
+     C o l u m n s   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   1 5      
+     S i z e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   9 6 . 0 0   K B      
+  
+     C o l u m n   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   T y p e      
+     i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     s c h o o l _ i d   u u i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     t e a c h e r _ i d   u u i d ,   n u l l a b l e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     s u b j e c t   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 1 0 0 )      
+     g r a d e   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     m a j o r   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     c l a s s _ g r o u p   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     c l a s s _ i d   u u i d ,   n u l l a b l e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   u u i d      
+     d a y   v a r c h a r   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     s t a r t _ t i m e   t i m e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   t i m e ( 0 )   w i t h o u t   t i m e   z o n e      
+     e n d _ t i m e   t i m e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   t i m e ( 0 )   w i t h o u t   t i m e   z o n e      
+     r o o m   v a r c h a r ,   n u l l a b l e   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   c h a r a c t e r   v a r y i n g ( 2 5 5 )      
+     i s _ a c t i v e   b o o l   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   t r u e   b o o l e a n      
+     c r e a t e d _ a t   t i m e s t a m p ,   n u l l a b l e   . . . . . . . . . . . . . .   t i m e s t a m p ( 0 )   w i t h o u t   t i m e   z o n e      
+     u p d a t e d _ a t   t i m e s t a m p ,   n u l l a b l e   . . . . . . . . . . . . . .   t i m e s t a m p ( 0 )   w i t h o u t   t i m e   z o n e      
+  
+     I n d e x   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      
+     s c h e d u l e s _ p k e y   i d   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   b t r e e ,   p r i m a r y      
+  
+     F o r e i g n   K e y   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   O n   U p d a t e   /   O n   D e l e t e      
+     s c h e d u l e s _ c l a s s _ i d _ f o r e i g n   c l a s s _ i d   r e f e r e n c e s   i d   o n   c l a s s e s     n o   a c t i o n   /   s e t   n u l l      
+     s c h e d u l e s _ s c h o o l _ i d _ f o r e i g n   s c h o o l _ i d   r e f e r e n c e s   i d   o n   s c h o o l s     n o   a c t i o n   /   c a s c a d e      
+     s c h e d u l e s _ t e a c h e r _ i d _ f o r e i g n   t e a c h e r _ i d   r e f e r e n c e s   i d   o n   t e a c h e r s     n o   a c t i o n   /   s e t   n u l l      
+  
+ === grep sync ===
+app/Http/Controllers/Api/SyncController.php
+app/Http/Controllers/Tenant/GuruMapel/AbsensiController.php
+app/Http/Controllers/Tenant/WaliKelas/AbsensiController.php
+app/Models/Absensi/Credential.php
+app/Models/Absensi/PeopleRef.php
+app/Models/Absensi/RefSyncState.php
+app/Models/Absensi/SchedulesRef.php

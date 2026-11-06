@@ -27,10 +27,15 @@ use Illuminate\Support\Facades\Log;
  * Token mentah SENGAJA TIDAK PERNAH disimpan permanen di Laravel (bukan
  * DB, bukan cache) - cuma numpang lewat di session flash untuk 1x
  * redirect ke halaman cetak, lalu hilang begitu session flash itu
- * dibaca. Kalau kertas hasil cetak hilang, solusinya generate ulang
- * (kredensial lama otomatis "kalah" begitu yang baru dibuat untuk
- * person_id yang sama - gateway yang atur ini, bukan Laravel), BUKAN
- * menampilkan ulang token lama yang sudah tidak ada di sisi kami.
+ * dibaca.
+ *
+ * KOREKSI 3 Okt 2026: gateway TIDAK otomatis menonaktifkan kredensial
+ * QR lama saat yang baru dibuat untuk person_id yang sama - dikonfirmasi
+ * lewat data nyata (dua kredensial QR aktif bersamaan sampai di-revoke
+ * manual). enrollQr() sekarang eksplisit mencabut kredensial QR aktif
+ * lama SEBELUM minta yang baru ke gateway, supaya "Generate Ulang" aman
+ * dipakai untuk skenario kartu hilang/dicuri tanpa perlu klik
+ * "Nonaktifkan" terpisah.
  */
 class CredentialController extends Controller
 {
@@ -196,6 +201,31 @@ class CredentialController extends Controller
         return $redirect;
     }
 
+    public function revoke(Request $request, string $personType, string $personId)
+    {
+        if (! in_array($personType, self::PERSON_TYPES, true)) {
+            abort(404);
+        }
+
+        $schoolId = $request->user()->school_id;
+
+        $updated = Credential::where('school_id', $schoolId)
+            ->where('person_id', $personId)
+            ->where('person_type', $personType)
+            ->where('method', 'qr')
+            ->where('is_active', true)
+            ->update([
+                'is_active' => false,
+                'revoked_at' => now(),
+            ]);
+
+        if ($updated === 0) {
+            return back()->withErrors(['credential' => 'Tidak ada kredensial QR aktif untuk orang ini.']);
+        }
+
+        return back()->with('success', 'Kredensial QR berhasil dinonaktifkan. Kartu lama tidak akan diterima lagi saat di-scan.');
+    }
+
     public function print(Request $request)
     {
         $batch = $request->session()->get('printBatch');
@@ -231,6 +261,18 @@ class CredentialController extends Controller
      */
     private function enrollQr($user, string $schoolId, string $personId, string $personType): string
     {
+        // Cabut kredensial QR aktif yang lama DULU - lihat catatan koreksi
+        // di docblock class di atas kenapa ini perlu eksplisit di Laravel.
+        Credential::where('school_id', $schoolId)
+            ->where('person_id', $personId)
+            ->where('person_type', $personType)
+            ->where('method', 'qr')
+            ->where('is_active', true)
+            ->update([
+                'is_active' => false,
+                'revoked_at' => now(),
+            ]);
+
         $rawToken = bin2hex(random_bytes(24)); // credential_value mentah, isi QR
 
         $jwt = (new GatewayTokenIssuer())->issueForAdmin($user->id, $schoolId);

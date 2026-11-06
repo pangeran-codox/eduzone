@@ -5,7 +5,10 @@ use App\Http\Controllers\Tenant\AbsensiHealthController;
 use App\Http\Controllers\Tenant\Tu\AttendanceDashboardController;
 use App\Http\Controllers\Tenant\Tu\CredentialController;
 use App\Http\Controllers\Tenant\Tu\AttendanceReportController;
+use App\Http\Controllers\Tenant\Tu\ImportController;
+use App\Http\Controllers\Tenant\Kurikulum\SubstitutionController;
 use App\Http\Controllers\Tenant\Kepsek\AttendanceMonitorController;
+use App\Http\Controllers\Tenant\GuruMapel\SesiAbsensiController;
 use App\Http\Controllers\Tenant\GuruMapel\AbsensiController as GuruMapelAbsensiController;
 
 /*
@@ -95,7 +98,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
         Route::get('/absensi/data', [AttendanceMonitorController::class, 'data'])->name('absensi.data');
     });
 
-    // ── Kurikulum ──────────────────────────────────────────────────────
+        // ── Kurikulum ──────────────────────────────────────────────────────
     Route::prefix('kurikulum')->name('kurikulum.')->middleware('role:kurikulum')->group(function () {
         Route::get('/dashboard', function () {
             if (! view()->exists('tenant.kurikulum.dashboard.index')) {
@@ -109,6 +112,13 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
                 'totalJurusanAktif'  => \App\Models\Major::where('is_active', true)->count(),
             ]);
         })->name('dashboard');
+
+        // Guru pengganti - path /kurikulum/pengganti, nama route kurikulum.pengganti.*
+        Route::prefix('pengganti')->name('pengganti.')->group(function () {
+            Route::get('/', [SubstitutionController::class, 'index'])->name('index');
+            Route::post('/', [SubstitutionController::class, 'store'])->name('store');
+            Route::delete('/{id}', [SubstitutionController::class, 'destroy'])->name('destroy');
+        });
     });
 
         // ── Tata Usaha ─────────────────────────────────────────────────────
@@ -131,6 +141,7 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
             Route::post('/generate/{personType}/{personId}', [CredentialController::class, 'generate'])->name('generate');
             Route::post('/generate-kelas/{classId}', [CredentialController::class, 'generateForClass'])->name('generate-class');
             Route::post('/generate-tipe/{personType}', [CredentialController::class, 'generateForType'])->name('generate-type');
+            Route::post('/revoke/{personType}/{personId}', [CredentialController::class, 'revoke'])->name('revoke');
             Route::get('/cetak', [CredentialController::class, 'print'])->name('print');
         });
 
@@ -160,6 +171,18 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
             Route::put('/{staff}', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'update'])->name('update');
             Route::delete('/{staff}', [\App\Http\Controllers\Tenant\Tu\StaffController::class, 'destroy'])->name('destroy');
         });
+
+                // Impor Data (Excel): kelas, siswa, guru. Nama route: tu.impor.*
+        Route::prefix('impor')->name('impor.')->group(function () {
+            Route::get('/', [ImportController::class, 'index'])->name('index');
+            Route::get('/template/{type}', [ImportController::class, 'template'])->name('template');
+            Route::post('/', [ImportController::class, 'store'])->middleware('throttle:20,1')->name('store');
+            Route::get('/{batch}', [ImportController::class, 'show'])->whereUuid('batch')->name('show');
+            Route::get('/{batch}/progress', [ImportController::class, 'progress'])->whereUuid('batch')->name('progress');
+            Route::post('/{batch}/konfirmasi', [ImportController::class, 'confirm'])->whereUuid('batch')->name('confirm');
+            Route::get('/{batch}/galat', [ImportController::class, 'errors'])->whereUuid('batch')->name('errors');
+            Route::get('/{batch}/akun', [ImportController::class, 'credentials'])->whereUuid('batch')->name('credentials');
+        });
     });
 
     // ── Guru (guru_mapel + wali_kelas) ─────────────────────────────────
@@ -179,8 +202,12 @@ Route::middleware(['auth', 'active', 'tenant'])->group(function () {
     });
 
     Route::prefix('guru-mapel')->name('guru_mapel.')->middleware('role:guru_mapel')->group(function () {
-    Route::get('/absensi', [GuruMapelAbsensiController::class, 'index'])->name('absensi.index');
-    Route::get('/absensi/{scheduleId}', [GuruMapelAbsensiController::class, 'detail'])->name('absensi.detail');
+        Route::get('/absensi', [GuruMapelAbsensiController::class, 'index'])->name('absensi.index');
+        Route::get('/absensi/{scheduleId}', [GuruMapelAbsensiController::class, 'detail'])->name('absensi.detail');
+        Route::get('/absensi/{scheduleId}/sesi', [SesiAbsensiController::class, 'edit'])
+            ->whereUuid('scheduleId')->name('absensi.sesi.edit');
+        Route::post('/absensi/{scheduleId}/sesi', [SesiAbsensiController::class, 'store'])
+            ->whereUuid('scheduleId')->name('absensi.sesi.store');
     });
 
     // ── Kesiswaan ──────────────────────────────────────────────────────

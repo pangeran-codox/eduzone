@@ -12,7 +12,7 @@ use Illuminate\View\View;
 
 class SchoolController extends Controller
 {
-    public const LEVELS = ['SD', 'SMP', 'SMA', 'SMK'];
+    public const LEVELS = \App\Support\EducationLevels::CODES;
     public const STATUSES = ['Negeri', 'Swasta'];
     public const ACCREDITATIONS = ['A', 'B', 'C', 'Belum Terakreditasi'];
     public const PLANS = ['trial' => 'Trial', 'basic' => 'Basic', 'pro' => 'Pro'];

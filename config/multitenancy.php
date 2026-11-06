@@ -130,6 +130,8 @@ return [
      * Jobs not tenant aware even if these don't implement the NotTenantAware interface.
      */
     'not_tenant_aware_jobs' => [
-        // ...
+        \App\Notifications\SchoolRegistrationVerifyEmail::class,
+        \App\Notifications\SchoolRegistrationApproved::class,
+        \App\Notifications\SchoolRegistrationRejected::class,
     ],
 ];

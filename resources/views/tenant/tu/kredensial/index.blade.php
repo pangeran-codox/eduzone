@@ -73,13 +73,20 @@
                                 {{ $r['has_credential'] ? 'Sudah punya QR' : 'Belum ada' }}
                             </span>
                         </td>
-                        <td>
+                        <td class="flex gap-3">
                             <form method="POST" action="{{ route('tu.kredensial.generate', [$r['person_type'], $r['person_id']]) }}">
                                 @csrf
                                 <button type="submit" class="text-sm text-indigo-600 hover:underline">
                                     {{ $r['has_credential'] ? 'Generate Ulang' : 'Generate QR' }}
                                 </button>
                             </form>
+                            @if($r['has_credential'])
+                                <form method="POST" action="{{ route('tu.kredensial.revoke', [$r['person_type'], $r['person_id']]) }}"
+                                    onsubmit="return confirm('Nonaktifkan QR untuk {{ $r['full_name'] }}? Kartu lama tidak akan diterima lagi.')">
+                                    @csrf
+                                    <button type="submit" class="text-sm text-red-600 hover:underline">Nonaktifkan</button>
+                                </form>
+                            @endif
                         </td>
                     </tr>
                 @empty

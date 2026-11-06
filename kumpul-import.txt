@@ -1,0 +1,948 @@
+﻿=== app\Http\Controllers\Tenant\Tu\StudentController.php ===
+<?php
+
+namespace App\Http\Controllers\Tenant\Tu;
+
+use App\Exceptions\SensitiveDataEncryptionException;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Tenant\Tu\StoreStudentRequest;
+use App\Http\Requests\Tenant\Tu\UpdateStudentRequest;
+use App\Models\Major;
+use App\Models\SchoolClass;
+use App\Models\Student;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\View\View;
+use Illuminate\Support\Facades\Storage;
+
+class StudentController extends Controller
+{
+    public const STATUSES = ['aktif' => 'Aktif', 'pindah' => 'Pindah', 'lulus' => 'Lulus', 'keluar' => 'Keluar'];
+    public const GENDERS = ['L' => 'Laki-laki', 'P' => 'Perempuan'];
+
+    private const SENSITIVE_FIELDS = [
+        'nis', 'nisn', 'birth_place', 'birth_date', 'religion', 'address', 'phone',
+        'father_name', 'mother_name', 'father_job', 'mother_job', 'parent_address', 'parent_phone',
+    ];
+
+    public function index(Request $request): View
+    {
+        $students = Student::query()
+            ->with('class')
+            ->when($request->filled('search'), fn ($q) => $q->where('full_name', 'ilike', "%{$request->input('search')}%"))
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
+            ->orderBy('full_name')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('tenant.tu.siswa.index', [
+            'students' => $students,
+            'statuses' => self::STATUSES,
+            'search' => $request->input('search', ''),
+            'statusFilter' => $request->input('status', ''),
+        ]);
+    }
+
+    public function create(): View
+    {
+        return view('tenant.tu.siswa.create', [
+            'majors' => Major::where('is_active', true)->orderBy('name')->get(),
+            'classes' => SchoolClass::where('is_active', true)->orderBy('nama_kelas')->get(),
+            'statuses' => self::STATUSES,
+            'genders' => self::GENDERS,
+        ]);
+    }
+
+    /**
+     * students.user_id NOT NULL - setiap siswa WAJIB punya akun User.
+     * Dibuat otomatis di sini (role 'siswa'), TU tidak perlu isi form
+     * akun terpisah. Skema kredensial default (disepakati 8 Sep 2026):
+     *   - username = NISN kalau diisi, fallback slug nama + angka urut
+     *   - password = tanggal lahir format DDMMYYYY
+     * Ditampilkan SEKALI ke TU lewat pesan sukses setelah simpan -
+     * TIDAK disimpan di tempat lain selain hash di kolom password.
+     */
+    public function store(StoreStudentRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $schoolId = $request->user()->school_id;
+
+        $username = $this->generateUsername($validated['nisn'] ?? null, $validated['full_name']);
+        $plainPassword = Carbon::parse($validated['birth_date'])->format('dmY');
+
+        $user = User::create([
+            'school_id' => $schoolId,
+            'username' => $username,
+            'email' => "{$username}@siswa.eduzone.local",
+            'role' => 'siswa',
+            'password' => bcrypt($plainPassword),
+            'is_active' => true,
+        ]);
+
+        $student = new Student();
+        $student->school_id = $schoolId;
+        $student->user_id = $user->id;
+        $this->fillNonSensitive($student, $validated);
+        $this->fillSensitive($student, $validated);
+        $this->handlePhotoUpload($student, $request);
+
+        try {
+            $student->save();
+        } catch (SensitiveDataEncryptionException $e) {
+            $user->delete();
+
+            return back()->withInput()->withErrors([
+                'general' => 'Data siswa gagal disimpan karena layanan enkripsi data sensitif (NISN, alamat, dll) sedang tidak tersedia. Coba lagi sesaat lagi, atau hubungi admin kalau berlanjut.',
+            ]);
+        }
+
+        return redirect()
+            ->route('tu.siswa.index')
+            ->with('success', "Data siswa \"{$student->full_name}\" berhasil ditambahkan. Akun login â€” Username: {$username}, Password: {$plainPassword} (catat sekarang, tidak ditampilkan lagi).");
+    }
+
+    public function edit(Student $student): View
+    {
+        return view('tenant.tu.siswa.edit', [
+            'student' => $student,
+            'majors' => Major::where('is_active', true)->orderBy('name')->get(),
+            'classes' => SchoolClass::where('is_active', true)->orderBy('nama_kelas')->get(),
+            'statuses' => self::STATUSES,
+            'genders' => self::GENDERS,
+        ]);
+    }
+
+    /**
+     * Update TIDAK menyentuh akun User/password sama sekali - siswa yang
+     * sudah pernah ganti password sendiri tidak boleh ke-reset diam-diam
+     * cuma karena TU edit data lain (mis. ganti kelas).
+     */
+    public function update(UpdateStudentRequest $request, Student $student): RedirectResponse
+    {
+        $validated = $request->validated();
+
+        $this->fillNonSensitive($student, $validated);
+        $this->fillSensitive($student, $validated);
+        $this->handlePhotoUpload($student, $request);
+
+        try {
+            $student->save();
+        } catch (SensitiveDataEncryptionException $e) {
+            return back()->withInput()->withErrors([
+                'general' => 'Data pokok tersimpan, tapi data sensitif (NISN, alamat, dll) gagal disimpan karena layanan enkripsi sedang tidak tersedia. Coba lagi, atau hubungi admin kalau berlanjut.',
+            ]);
+        }
+
+        return redirect()
+            ->route('tu.siswa.index')
+            ->with('success', "Data siswa \"{$student->full_name}\" berhasil diperbarui.");
+    }
+
+    /**
+     * Hapus Student SEKALIGUS User terkait (siswa tanpa akun = data
+     * yatim yang melanggar constraint NOT NULL kalau ada yang lain
+     * kebetulan masih reference user_id ini).
+     */
+    public function destroy(Student $student): RedirectResponse
+    {
+        try {
+            $userId = $student->user_id;
+            $student->delete();
+            User::where('id', $userId)->delete();
+        } catch (QueryException $e) {
+            return redirect()
+                ->route('tu.siswa.index')
+                ->with('error', "Data siswa \"{$student->full_name}\" tidak bisa dihapus permanen karena masih punya data terkait (nilai/absensi/dll). Ubah status jadi \"Keluar\" lewat Edit sebagai gantinya.");
+        }
+
+        return redirect()
+            ->route('tu.siswa.index')
+            ->with('success', "Data siswa \"{$student->full_name}\" berhasil dihapus.");
+    }
+
+    private function fillNonSensitive(Student $student, array $validated): void
+    {
+        $student->full_name = $validated['full_name'];
+        $student->email = $validated['email'] ?? null;
+        $student->gender = $validated['gender'];
+        $student->grade = $validated['grade'] ?? null;
+        $student->major_id = $validated['major_id'] ?? null;
+        $student->class_group = $validated['class_group'] ?? null;
+        $student->class_id = $validated['class_id'] ?? null;
+        $student->joined_date = $validated['joined_date'] ?? null;
+        $student->status = $validated['status'];
+    }
+
+    private function fillSensitive(Student $student, array $validated): void
+    {
+        foreach (self::SENSITIVE_FIELDS as $field) {
+            if (array_key_exists($field, $validated)) {
+                $student->{$field} = $validated[$field];
+            }
+        }
+    }
+
+    /**
+     * Upload foto - disimpan di disk 'private_photos' (BUKAN 'public'),
+     * diakses hanya lewat route bertoken (PersonPhotoController). Kalau
+     * ada foto lama, dihapus dulu supaya tidak numpuk file yatim di disk.
+     */
+    private function handlePhotoUpload(Student $student, Request $request): void
+    {
+        if (! $request->hasFile('photo')) {
+            return;
+        }
+
+        if ($student->photo) {
+            Storage::disk('private_photos')->delete($student->photo);
+        }
+
+        $student->photo = $request->file('photo')->store('', 'private_photos');
+    }
+
+    /**
+     * username = NISN kalau diisi (unik nasional di dunia nyata).
+     * Fallback: slug nama lengkap, ditambah angka urut kalau bentrok.
+     * Cek keunikan LINTAS SEKOLAH (withoutGlobalScopes) - username dipakai
+     * buat Auth::attempt() yang tidak di-scope per sekolah, jadi harus
+     * unik secara global supaya tidak ambigu login-nya.
+     */
+    private function generateUsername(?string $nisn, string $fullName): string
+    {
+        if (! empty($nisn)) {
+            return $nisn;
+        }
+
+        $base = Str::slug($fullName, '.');
+        $username = $base;
+        $suffix = 1;
+
+        while (User::withoutGlobalScopes()->where('username', $username)->exists()) {
+            $username = "{$base}{$suffix}";
+            $suffix++;
+        }
+
+        return $username;
+    }
+}
+=== app\Http\Requests\Tenant\Tu\StoreStudentRequest.php ===
+<?php
+
+namespace App\Http\Requests\Tenant\Tu;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class StoreStudentRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true; // sudah dibatasi middleware role:tu + tenant di route
+    }
+
+    public function rules(): array
+    {
+        $schoolId = $this->user()->school_id;
+
+        return [
+            'full_name' => ['required', 'string', 'max:255'],
+            'email' => [
+                'nullable', 'email', 'max:255',
+                Rule::unique('students', 'email')->where(fn ($q) => $q->where('school_id', $schoolId)),
+            ],
+            'gender' => ['required', Rule::in(['L', 'P'])],
+            'grade' => ['nullable', 'string', 'max:50'],
+            'major_id' => ['nullable', 'uuid', Rule::exists('majors', 'id')->where(fn ($q) => $q->where('school_id', $schoolId))],
+            'class_group' => ['nullable', 'string', 'max:50'],
+            'class_id' => ['nullable', 'uuid', Rule::exists('classes', 'id')->where(fn ($q) => $q->where('school_id', $schoolId))],
+            'joined_date' => ['nullable', 'date'],
+            'status' => ['required', Rule::in(['aktif', 'pindah', 'lulus', 'keluar'])],
+
+            // Field sensitif - BUKAN kolom asli tabel students (proxy ke
+            // student_sensitive_data via magic __set di model Student),
+            // tapi validasinya tetap normal karena ini soal input request.
+            'nis' => ['nullable', 'string', 'max:50', new \App\Rules\UniqueHashedField('students', 'nis_hash')],
+            'nisn' => ['nullable', 'string', 'max:50', new \App\Rules\UniqueHashedField('students', 'nisn_hash')],
+            'birth_place' => ['nullable', 'string', 'max:255'],
+            'birth_date' => ['nullable', 'date'],
+            'religion' => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'father_name' => ['nullable', 'string', 'max:255'],
+            'mother_name' => ['nullable', 'string', 'max:255'],
+            'father_job' => ['nullable', 'string', 'max:255'],
+            'mother_job' => ['nullable', 'string', 'max:255'],
+            'parent_address' => ['nullable', 'string'],
+            'parent_phone' => ['nullable', 'string', 'max:30'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'full_name' => 'nama lengkap',
+            'nisn' => 'NISN',
+            'nis' => 'NIS',
+            'birth_place' => 'tempat lahir',
+            'birth_date' => 'tanggal lahir',
+        ];
+    }
+}
+=== app\Http\Controllers\Tenant\Tu\TeacherController.php ===
+<?php
+
+namespace App\Http\Controllers\Tenant\Tu;
+
+use App\Exceptions\SensitiveDataEncryptionException;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Tenant\Tu\StoreTeacherRequest;
+use App\Http\Requests\Tenant\Tu\UpdateTeacherRequest;
+use App\Models\Major;
+use App\Models\Teacher;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\View\View;
+
+/**
+ * CRUD Data Guru, disalin persis dari pola StudentController (auto-provisioning
+ * akun, penanganan gagal enkripsi, photo upload private) â€” lihat komentar di
+ * sana untuk detail desain lengkap. Bedanya cuma field & skema kredensial:
+ * username = NIP kalau diisi, fallback slug nama; password = DDMMYYYY.
+ */
+class TeacherController extends Controller
+{
+    public const GENDERS = ['L' => 'Laki-laki', 'P' => 'Perempuan'];
+    public const EMPLOYMENT_STATUSES = ['PNS', 'PPPK', 'Honorer', 'GTY', 'GTT'];
+
+    private const SENSITIVE_FIELDS = ['nip', 'nuptk', 'birth_place', 'birth_date', 'religion', 'address', 'phone'];
+
+    public function index(Request $request): View
+    {
+        $teachers = Teacher::query()
+            ->with('major')
+            ->when($request->filled('search'), fn ($q) => $q->where('full_name', 'ilike', "%{$request->input('search')}%"))
+            ->when($request->has('active'), fn ($q) => $q->where('is_active', $request->boolean('active')))
+            ->orderBy('full_name')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('tenant.tu.guru.index', [
+            'teachers' => $teachers,
+            'search' => $request->input('search', ''),
+            'activeFilter' => $request->input('active', ''),
+        ]);
+    }
+
+    public function create(): View
+    {
+        return view('tenant.tu.guru.create', [
+            'majors' => Major::where('is_active', true)->orderBy('name')->get(),
+            'genders' => self::GENDERS,
+            'employmentStatuses' => self::EMPLOYMENT_STATUSES,
+        ]);
+    }
+
+    public function store(StoreTeacherRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $schoolId = $request->user()->school_id;
+
+        $username = $this->generateUsername($validated['nip'] ?? null, $validated['full_name']);
+        $plainPassword = ! empty($validated['birth_date'])
+            ? Carbon::parse($validated['birth_date'])->format('dmY')
+            : 'eduzone123';
+
+        $user = User::create([
+            'school_id' => $schoolId,
+            'username' => $username,
+            'email' => "{$username}@guru.eduzone.local",
+            'role' => 'guru_mapel',
+            'password' => bcrypt($plainPassword),
+            'is_active' => true,
+        ]);
+
+        $teacher = new Teacher();
+        $teacher->school_id = $schoolId;
+        $teacher->user_id = $user->id;
+        $this->fillNonSensitive($teacher, $validated);
+        $this->fillSensitive($teacher, $validated);
+        $this->handlePhotoUpload($teacher, $request);
+
+        try {
+            $teacher->save();
+        } catch (SensitiveDataEncryptionException $e) {
+            $user->delete();
+
+            return back()->withInput()->withErrors([
+                'general' => 'Data guru gagal disimpan karena layanan enkripsi data sensitif (NIP, alamat, dll) sedang tidak tersedia. Coba lagi sesaat lagi, atau hubungi admin kalau berlanjut.',
+            ]);
+        }
+
+        return redirect()
+            ->route('tu.guru.index')
+            ->with('success', "Data guru \"{$teacher->full_name}\" berhasil ditambahkan. Akun login â€” Username: {$username}, Password: {$plainPassword} (catat sekarang, tidak ditampilkan lagi).");
+    }
+
+    public function edit(Teacher $teacher): View
+    {
+        return view('tenant.tu.guru.edit', [
+            'teacher' => $teacher,
+            'majors' => Major::where('is_active', true)->orderBy('name')->get(),
+            'genders' => self::GENDERS,
+            'employmentStatuses' => self::EMPLOYMENT_STATUSES,
+        ]);
+    }
+
+    public function update(UpdateTeacherRequest $request, Teacher $teacher): RedirectResponse
+    {
+        $validated = $request->validated();
+
+        $this->fillNonSensitive($teacher, $validated);
+        $this->fillSensitive($teacher, $validated);
+        $this->handlePhotoUpload($teacher, $request);
+
+        try {
+            $teacher->save();
+        } catch (SensitiveDataEncryptionException $e) {
+            return back()->withInput()->withErrors([
+                'general' => 'Data pokok tersimpan, tapi data sensitif (NIP, alamat, dll) gagal disimpan karena layanan enkripsi sedang tidak tersedia. Coba lagi, atau hubungi admin kalau berlanjut.',
+            ]);
+        }
+
+        return redirect()
+            ->route('tu.guru.index')
+            ->with('success', "Data guru \"{$teacher->full_name}\" berhasil diperbarui.");
+    }
+
+    public function destroy(Teacher $teacher): RedirectResponse
+    {
+        try {
+            $userId = $teacher->user_id;
+            $teacher->delete();
+            User::where('id', $userId)->delete();
+        } catch (QueryException $e) {
+            return redirect()
+                ->route('tu.guru.index')
+                ->with('error', "Data guru \"{$teacher->full_name}\" tidak bisa dihapus permanen karena masih punya data terkait (jadwal/absensi/dll). Nonaktifkan lewat Edit sebagai gantinya.");
+        }
+
+        return redirect()
+            ->route('tu.guru.index')
+            ->with('success', "Data guru \"{$teacher->full_name}\" berhasil dihapus.");
+    }
+
+    private function fillNonSensitive(Teacher $teacher, array $validated): void
+    {
+        $teacher->full_name = $validated['full_name'];
+        $teacher->email = $validated['email'] ?? null;
+        $teacher->gender = $validated['gender'];
+        $teacher->last_education = $validated['last_education'] ?? null;
+        $teacher->education_major = $validated['education_major'] ?? null;
+        $teacher->employment_status = $validated['employment_status'] ?? null;
+        $teacher->joined_date = $validated['joined_date'] ?? null;
+        $teacher->major_id = $validated['major_id'] ?? null;
+        $teacher->is_homeroom = $validated['is_homeroom'] ?? false;
+        $teacher->is_active = $validated['is_active'];
+    }
+
+    private function fillSensitive(Teacher $teacher, array $validated): void
+    {
+        foreach (self::SENSITIVE_FIELDS as $field) {
+            if (array_key_exists($field, $validated)) {
+                $teacher->{$field} = $validated[$field];
+            }
+        }
+    }
+
+    private function handlePhotoUpload(Teacher $teacher, Request $request): void
+    {
+        if (! $request->hasFile('photo')) {
+            return;
+        }
+
+        if ($teacher->photo) {
+            Storage::disk('private_photos')->delete($teacher->photo);
+        }
+
+        $teacher->photo = $request->file('photo')->store('', 'private_photos');
+    }
+
+    private function generateUsername(?string $nip, string $fullName): string
+    {
+        if (! empty($nip)) {
+            return $nip;
+        }
+
+        $base = Str::slug($fullName, '.');
+        $username = $base;
+        $suffix = 1;
+
+        while (User::withoutGlobalScopes()->where('username', $username)->exists()) {
+            $username = "{$base}{$suffix}";
+            $suffix++;
+        }
+
+        return $username;
+    }
+}
+=== app\Http\Requests\Tenant\Tu\StoreTeacherRequest.php ===
+<?php
+
+namespace App\Http\Requests\Tenant\Tu;
+
+use App\Rules\UniqueHashedField;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class StoreTeacherRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true; // sudah dibatasi middleware role:tu + tenant di route
+    }
+
+    public function rules(): array
+    {
+        $schoolId = $this->user()->school_id;
+
+        return [
+            'full_name' => ['required', 'string', 'max:255'],
+            'email' => [
+                'nullable', 'email', 'max:255',
+                Rule::unique('teachers', 'email')->where(fn ($q) => $q->where('school_id', $schoolId)),
+            ],
+            'gender' => ['required', Rule::in(['L', 'P'])],
+            'last_education' => ['nullable', 'string', 'max:50'],
+            'education_major' => ['nullable', 'string', 'max:255'],
+            'employment_status' => ['nullable', 'string', 'max:50'],
+            'joined_date' => ['nullable', 'date'],
+            'major_id' => ['nullable', 'uuid', Rule::exists('majors', 'id')->where(fn ($q) => $q->where('school_id', $schoolId))],
+            'is_homeroom' => ['nullable', 'boolean'],
+            'is_active' => ['required', 'boolean'],
+
+            'nip' => ['nullable', 'string', 'max:50', new UniqueHashedField('teachers', 'nip_hash')],
+            'nuptk' => ['nullable', 'string', 'max:50', new UniqueHashedField('teachers', 'nuptk_hash')],
+            'birth_place' => ['nullable', 'string', 'max:255'],
+            'birth_date' => ['nullable', 'date'],
+            'religion' => ['nullable', 'string', 'max:50'],
+            'address' => ['nullable', 'string'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'full_name' => 'nama lengkap',
+            'nip' => 'NIP',
+            'nuptk' => 'NUPTK',
+            'birth_place' => 'tempat lahir',
+            'birth_date' => 'tanggal lahir',
+        ];
+    }
+}
+=== app\Models\Student.php ===
+<?php
+
+namespace App\Models;
+
+use App\Models\Concerns\HasPhotoAccessToken;
+use App\Multitenancy\Concerns\BelongsToSchool;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
+class Student extends Model
+{
+    use BelongsToSchool, HasUuids, HasPhotoAccessToken;
+
+    protected $table = 'students';
+
+    protected $primaryKey = 'id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'school_id',
+        'user_id',
+        'nis_hash',
+        'nisn_hash',
+        'full_name',
+        'email', // plain - dipakai aktif untuk notifikasi
+        'gender',
+        'grade',
+        'major_id',
+        'class_group',
+        'class_id',
+        'joined_date',
+        'status',
+        'photo',
+    ];
+
+    protected $casts = [
+        'joined_date' => 'date',
+    ];
+
+    /**
+     * Field sensitif yang sebenarnya disimpan di tabel student_sensitive_data,
+     * tapi diakses transparan lewat $student->nisn, $student->address, dst.
+     *
+     * Catatan: 'email' SENGAJA TIDAK masuk di sini - email siswa dipakai aktif
+     * untuk notifikasi otomatis, jadi disimpan plain di kolom students.email
+     * supaya tidak ada overhead gRPC tiap kirim notifikasi massal.
+     */
+    protected static array $proxiedSensitiveFields = [
+        'nis',
+        'nisn',
+        'birth_place',
+        'birth_date',
+        'religion',
+        'address',
+        'phone',
+        'father_name',
+        'mother_name',
+        'father_job',
+        'mother_job',
+        'parent_address',
+        'parent_phone',
+    ];
+
+    /** Field yang juga punya kolom hash di tabel students untuk searchable exact-match */
+    protected static array $hashedFields = ['nis', 'nisn'];
+
+    /** Penampung sementara field sensitif yang di-set lewat __set, baru benar2 disimpan saat save() */
+    protected array $pendingSensitiveData = [];
+
+    // Relationships
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function major(): BelongsTo
+    {
+        return $this->belongsTo(Major::class, 'major_id');
+    }
+
+    public function class(): BelongsTo
+    {
+        return $this->belongsTo(SchoolClass::class, 'class_id');
+    }
+
+    public function sensitiveData(): HasOne
+    {
+        return $this->hasOne(StudentSensitiveData::class, 'student_id');
+    }
+
+    public function studentAttendances(): HasMany
+    {
+        return $this->hasMany(StudentAttendance::class, 'student_id');
+    }
+
+    public function studentGrades(): HasMany
+    {
+        return $this->hasMany(StudentGrade::class, 'student_id');
+    }
+
+    public function studentSikap(): HasMany
+    {
+        return $this->hasMany(StudentSikap::class, 'student_id');
+    }
+
+    public function studentAchievements(): HasMany
+    {
+        return $this->hasMany(StudentAchievement::class, 'student_id');
+    }
+
+    public function studentRecords(): HasMany
+    {
+        return $this->hasMany(StudentRecord::class, 'student_id');
+    }
+
+    public function counselingSessions(): HasMany
+    {
+        return $this->hasMany(CounselingSession::class, 'student_id');
+    }
+
+    public function studentSubjectAttendances(): HasMany
+    {
+        return $this->hasMany(StudentSubjectAttendance::class, 'student_id');
+    }
+
+    /**
+     * Proxy GET untuk field sensitif: $student->nisn, $student->address, dst.
+     * Cek dulu pending (belum disimpan), baru fallback ke data yang sudah tersimpan.
+     */
+    public function __get($key)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            if (array_key_exists($key, $this->pendingSensitiveData)) {
+                return $this->pendingSensitiveData[$key];
+            }
+
+                return $this->sensitiveData?->{$key};
+        }
+
+        return parent::__get($key);
+    }
+
+    /**
+     * Wajib ada: operator ?? / isset() / empty() memanggil __isset(), bukan
+     * __get(). Tanpa ini, $student->nisn ?? '' selalu '' karena Eloquent
+     * tidak kenal field sensitif yang di-proxy lewat __get() (bug ditemukan
+     * 27 Sep 2026 - form Edit selalu tampil kosong untuk field sensitif
+     * meski data tersimpan & terenkripsi dengan benar).
+     */
+    public function __isset($key)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            return $this->__get($key) !== null;
+        }
+
+        return parent::__isset($key);
+    }
+
+    /**
+     * Proxy SET untuk field sensitif: $student->nisn = '0012345678'.
+     * TIDAK langsung save ke DB - cuma ditampung di $pendingSensitiveData.
+     * Baru benar2 di-encrypt & disimpan saat $student->save() dipanggil,
+     * supaya banyak field sekaligus jadi 1x save = 1 baris audit log.
+     *
+     * Kolom hash (nisn_hash/nis_hash) langsung di-set ke attributes (murah, tanpa gRPC),
+     * supaya ikut tersimpan otomatis saat parent::save().
+     */
+    public function __set($key, $value)
+    {
+        if (in_array($key, static::$proxiedSensitiveFields, true)) {
+            $this->pendingSensitiveData[$key] = $value;
+
+            if (in_array($key, static::$hashedFields, true)) {
+                $hashColumn = "{$key}_hash";
+                $this->attributes[$hashColumn] = $value ? hash('sha256', $value) : null;
+            }
+
+            return;
+        }
+
+        parent::__set($key, $value);
+    }
+
+    /**
+     * Override save(): simpan dulu data utama (tabel students), lalu flush
+     * pending sensitive data ke tabel student_sensitive_data dalam 1x save.
+     *
+     * CATATAN (2 Sep 2026): kalau $sensitive->save() di bawah melempar
+     * SensitiveDataEncryptionException (gRPC gagal), exception itu akan
+     * nembus ke atas dari sini juga - controller pemanggil WAJIB
+     * menangkapnya. Lihat catatan di StudentSensitiveData::setEncrypted().
+     */
+    public function save(array $options = []): bool
+    {
+        $saved = parent::save($options);
+
+        if ($saved && !empty($this->pendingSensitiveData)) {
+            $sensitive = $this->sensitiveData ?? $this->sensitiveData()->make([
+                'school_id' => $this->school_id,
+            ]);
+
+            foreach ($this->pendingSensitiveData as $field => $value) {
+                $sensitive->{$field} = $value; // trigger encrypt di StudentSensitiveData::__set
+            }
+
+            $sensitive->student_id = $this->id;
+            $sensitive->school_id = $this->school_id;
+            $sensitive->save(); // 1x save = 1 baris audit log untuk semua field yang berubah
+
+            $this->setRelation('sensitiveData', $sensitive);
+            $this->pendingSensitiveData = [];
+        }
+
+        return $saved;
+    }
+
+    /**
+     * Helper untuk pencarian exact-match by NISN (memakai kolom hash, bukan ciphertext).
+     *
+     * Contoh: Student::findByNisn('0012345678');
+     */
+    public static function findByNisn(string $nisn): ?self
+    {
+        return static::where('nisn_hash', hash('sha256', $nisn))->first();
+    }
+
+    /**
+     * Helper untuk pencarian exact-match by NIS.
+     */
+    public static function findByNis(string $nis): ?self
+    {
+        return static::where('nis_hash', hash('sha256', $nis))->first();
+    }
+}
+=== app\Models\SchoolClass.php ===
+<?php
+
+namespace App\Models;
+
+use App\Multitenancy\Concerns\BelongsToSchool;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class SchoolClass extends Model
+{
+    use BelongsToSchool, HasUuids;
+
+    protected $table = 'classes';
+
+    protected $primaryKey = 'id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'school_id',
+        'grade',
+        'major_id',
+        'class_group',
+        'academic_year',
+        'nama_kelas',
+        'kapasitas',
+        'is_active',
+    ];
+
+    protected $casts = [
+        'kapasitas' => 'integer',
+        'is_active' => 'boolean',
+    ];
+
+    // Relationships
+    public function major(): BelongsTo
+    {
+        return $this->belongsTo(Major::class, 'major_id');
+    }
+
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class, 'class_id');
+    }
+
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class, 'class_id');
+    }
+
+    public function gradeConfigs(): HasMany
+    {
+        return $this->hasMany(GradeConfig::class, 'class_id');
+    }
+
+    public function exams(): HasMany
+    {
+        return $this->hasMany(Exam::class, 'class_id');
+    }
+
+    public function lessonJournals(): HasMany
+    {
+        return $this->hasMany(LessonJournal::class, 'class_id');
+    }
+
+    public function homeroomAssignments(): HasMany
+    {
+        return $this->hasMany(HomeroomAssignment::class, 'class_id');
+    }
+
+    public function studentGrades(): HasMany
+    {
+        return $this->hasMany(StudentGrade::class, 'class_id');
+    }
+
+    public function studentSikap(): HasMany
+    {
+        return $this->hasMany(StudentSikap::class, 'class_id');
+    }
+}
+=== app\Models\Schedule.php ===
+<?php
+
+namespace App\Models;
+
+use App\Multitenancy\Concerns\BelongsToSchool;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Schedule extends Model
+{
+    use BelongsToSchool, HasUuids;
+
+    protected $table = 'schedules';
+
+    protected $primaryKey = 'id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'school_id',
+        'teacher_id',
+        'subject',
+        'grade',
+        'major',
+        'class_group',
+        'class_id',
+        'day',
+        'start_time',
+        'end_time',
+        'room',
+        'is_active',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
+    // Relationships
+    public function teacher(): BelongsTo
+    {
+        return $this->belongsTo(Teacher::class, 'teacher_id');
+    }
+
+    public function class(): BelongsTo
+    {
+        return $this->belongsTo(SchoolClass::class, 'class_id');
+    }
+
+    public function teachingAttendances(): HasMany
+    {
+        return $this->hasMany(TeachingAttendance::class, 'schedule_id');
+    }
+
+    public function lessonJournals(): HasMany
+    {
+        return $this->hasMany(LessonJournal::class, 'schedule_id');
+    }
+
+    public function studentSubjectAttendances(): HasMany
+    {
+        return $this->hasMany(StudentSubjectAttendance::class, 'schedule_id');
+    }
+}

@@ -21,7 +21,7 @@ class UpdateSchoolRequest extends FormRequest
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('schools', 'slug')->ignore($schoolId)],
             'npsn' => ['nullable', 'string', 'max:20', Rule::unique('schools', 'npsn')->ignore($schoolId)],
             'nss' => ['nullable', 'string', 'max:20'],
-            'level' => ['nullable', Rule::in(['SD', 'SMP', 'SMA', 'SMK'])],
+            'level' => ['nullable', Rule::in(\App\Support\EducationLevels::CODES)],
             'status' => ['nullable', Rule::in(['Negeri', 'Swasta'])],
             'accreditation' => ['nullable', Rule::in(['A', 'B', 'C', 'Belum Terakreditasi'])],
 

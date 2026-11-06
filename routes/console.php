@@ -8,6 +8,8 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Schedule::command('registrations:expire-stale')->hourly();
+
 // Horizon metrics snapshot — jalankan setiap 5 menit
 // Ini yang mengisi grafik di Horizon dashboard
 Schedule::command('horizon:snapshot')->everyFiveMinutes();

@@ -121,7 +121,7 @@ COPY docker/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
 # Install composer deps (no dev)
 COPY --chown=laravel:laravel composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --optimize-autoloader
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-scripts --no-autoloader --prefer-dist --optimize-autoloader
 
 # Copy app
 COPY --chown=laravel:laravel . .
@@ -129,18 +129,28 @@ COPY --chown=laravel:laravel . .
 # Copy built assets from node stage
 COPY --from=node-builder --chown=laravel:laravel /app/public/build ./public/build
 
-RUN composer dump-autoload --optimize --classmap-authoritative
+# NOTE: dump-autoload pakai --no-scripts agar TIDAK mengeksekusi
+# post-autoload-dump (artisan package:discover) di build time.
+# Reason: 1) Laravel boot membutuhkan .env (yang di-exclude oleh .dockerignore)
+#         2) TelescopeServiceProvider (require-dev) tidak terinstall di --no-dev,
+#            jadi artisan apapun yang bootstrap Laravel akan error.
+# Jalankan package:discover / optimize MANUAL setelah container berjalan di runtime:
+#   docker exec -it <container> php artisan package:discover --ansi
+#   docker exec -it <container> php artisan optimize
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload --optimize --classmap-authoritative --no-scripts
 
 # Storage & cache permissions
 RUN mkdir -p storage/logs storage/framework/{cache,sessions,views,testing} bootstrap/cache \
     && chown -R laravel:laravel storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# Laravel production optimizations
-RUN php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache \
-    && php artisan event:cache
+# NOTE: Laravel production optimizations (config:cache, route:cache, view:cache, event:cache)
+# TIDAK dijalankan saat BUILD TIME karena butuh .env dan values harus sesuai environment runtime.
+# Jalankan MANUAL setelah container berjalan (production):
+#   docker exec -it <container> php artisan optimize
+# ATAU tambahkan di entrypoint script jika ingin auto-run di startup.
+# (Reason: .env di-exclude oleh .dockerignore, dan build-time cache akan mengabaikan
+# runtime env vars dari docker compose / swarm secrets).
 
 USER laravel
 
