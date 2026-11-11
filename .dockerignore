@@ -7,3 +7,8 @@ public/build
 public/hot
 
 public/storage
+
+vendor
+.env.*
+!.env.example
+*.bak

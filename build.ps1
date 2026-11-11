@@ -82,6 +82,18 @@ Push image ke registry (butuh salah satu: -Registry ATAU -DockerHub).
 Kalau -DockerBuild tidak aktif, script assume image sudah dibuild sebelumnya
 dengan tag yang SAMA PERSIS (cek dulu via docker image ls).
 
+.PARAMETER ViteReverbHost
+Host/domain endpoint WebSocket (Reverb) yang diakses BROWSER, di-bake ke
+bundle JS production saat docker build (mis. 'eduzone.example.com').
+Kosong = ambil dari .env (VITE_REVERB_HOST). JANGAN pakai nama service
+internal Swarm (eduzone_reverb) — browser tidak bisa resolve itu.
+
+.PARAMETER ViteReverbPort
+Port WebSocket yang diakses browser (production default: 443). Kosong = dari .env.
+
+.PARAMETER ViteReverbScheme
+Skema WebSocket browser: 'https' (wss) atau 'http' (ws). Kosong = dari .env.
+
 .PARAMETER Release
 Shortcut ONE-COMMAND untuk production release:
   * Auto-set -Mode Production
@@ -177,6 +189,12 @@ param(
     [string]$Registry = '',
     [string]$DockerHub = '',
     [switch]$Push,
+
+    # Nilai VITE Reverb yang di-bake ke bundle JS saat docker build.
+    # Kosong = fallback baca dari .env (VITE_REVERB_* → ${REVERB_*}).
+    [string]$ViteReverbHost = '',
+    [string]$ViteReverbPort = '',
+    [string]$ViteReverbScheme = '',
 
     [Parameter(ParameterSetName = 'Release')]
     [switch]$Release,
@@ -645,6 +663,27 @@ function Read-EnvFile {
     return $envData
 }
 
+function Resolve-EnvValue {
+    # Normalisasi nilai .env: buang tanda kutip, dan resolve placeholder
+    # "${VAR}" (dipakai .env.example: VITE_REVERB_HOST="${REVERB_HOST}")
+    # ke nilai variabel aslinya dari .env.
+    param(
+        [hashtable]$EnvData,
+        [string]$Value
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    $v = $Value.Trim()
+    if ($v.Length -ge 2 -and $v.StartsWith('"') -and $v.EndsWith('"')) {
+        $v = $v.Substring(1, $v.Length - 2)
+    }
+    if ($v -match '^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$') {
+        $ref = $Matches[1]
+        if ($EnvData -and $EnvData.ContainsKey($ref)) { return $EnvData[$ref] }
+        return ''
+    }
+    return $v
+}
+
 function Get-LatestGitSemverTag {
     if (-not (Test-CommandExists 'git')) { return $null }
     try {
@@ -710,9 +749,35 @@ function Test-DockerLoggedIn {
         if ([string]::IsNullOrWhiteSpace($RegistryHint)) {
             return ($cfg.auths.PSObject.Properties.Count -gt 0)
         }
+        # Normalisasi: Docker Hub bisa tersimpan sebagai "docker.io/<user>",
+        # "index.docker.io" atau "https://index.docker.io/v1/" di config.json.
+        $candidates = @($RegistryHint)
+        if ($RegistryHint -like 'docker.io*') { $candidates += 'index.docker.io' }
         foreach ($regKey in $cfg.auths.PSObject.Properties.Name) {
-            if ($regKey -like "*$RegistryHint*") { return $true }
-            if ($RegistryHint -like "*$regKey*") { return $true }
+            foreach ($cand in $candidates) {
+                if ($regKey -like "*$cand*") { return $true }
+                if ($cand -like "*$regKey*") { return $true }
+            }
+        }
+        # Fallback: kredensial disimpan di credential store (mis. Docker Desktop
+        # `credsStore: desktop`), sehingga entri `auths` ada tapi tanpa field
+        # `auth`. Cek lewat `docker-credential-<store> list`.
+        if ($cfg.credsStore) {
+            $helper = "docker-credential-$($cfg.credsStore)"
+            if (Test-CommandExists $helper) {
+                try {
+                    $listRaw = (& $helper list 2>$null | Out-String)
+                    if ($listRaw) {
+                        foreach ($svr in ($listRaw | ConvertFrom-Json).PSObject.Properties.Name) {
+                            foreach ($cand in $candidates) {
+                                if ($svr -like "*$cand*" -or $cand -like "*$svr*") { return $true }
+                            }
+                        }
+                    }
+                } catch {
+                    Write-Verbose "Credential helper list error: $_"
+                }
+            }
         }
         return $false
     } catch {
@@ -1300,22 +1365,73 @@ if ($DockerBuild -or $DockerUp -or $DockerRecreate -or $Push) {
 
     # -- Build Image --
     if ($DockerBuild) {
-        if ($PSCmdlet.ShouldProcess($fullImageName, "docker build --target $targetStage")) {
-            $buildArgs = @(
-                'build',
-                '--progress', 'plain',
-                '--target', $targetStage,
-                '-t', $fullImageName,
-                '-t', $latestAlias,
-                '.'
-            )
-            Write-Warn "Docker build: compile ext-grpc dari source bisa MEMAKAN WAKTU LAMA (~20-60 menit). Timeout=${TimeoutSeconds}s. Ini NORMAL, bukan hang."
-            Write-Host "  [INFO] Output docker build akan di-stream LIVE ke terminal di bawah ini (lihat progress compile ext-grpc)." -ForegroundColor DarkGray
-            Write-Host ""
-            $buildStart = Get-Date
-            Invoke-StreamingCommand -Command 'docker' -Arguments $buildArgs -WorkingDirectory $PROJECT_ROOT -TimeoutSec $TimeoutSeconds
-            $buildDur = (Get-Date) - $buildStart
-            Write-Success "Docker image built: $fullImageName (+ $latestAlias) [selesai dalam $($buildDur.ToString('hh\:mm\:ss'))]"
+        # ── Nilai VITE Reverb: di-bake ke bundle JS saat `npm run build` ──
+        # Harus menunjuk endpoint WebSocket yang diakses BROWSER (domain publik
+        # via reverse-proxy nginx → location /app), BUKAN nama service internal
+        # Swarm. Prioritas: parameter -ViteReverb* > nilai .env (VITE_REVERB_*).
+        $viteReverbHost   = if (-not [string]::IsNullOrWhiteSpace($ViteReverbHost))   { $ViteReverbHost }   else { Resolve-EnvValue -EnvData $envData -Value $envData['VITE_REVERB_HOST'] }
+        $viteReverbPort   = if (-not [string]::IsNullOrWhiteSpace($ViteReverbPort))   { $ViteReverbPort }   else { Resolve-EnvValue -EnvData $envData -Value $envData['VITE_REVERB_PORT'] }
+        $viteReverbScheme = if (-not [string]::IsNullOrWhiteSpace($ViteReverbScheme)) { $ViteReverbScheme } else { Resolve-EnvValue -EnvData $envData -Value $envData['VITE_REVERB_SCHEME'] }
+        $viteReverbAppKey = Resolve-EnvValue -EnvData $envData -Value $envData['VITE_REVERB_APP_KEY']
+        if ([string]::IsNullOrWhiteSpace($viteReverbAppKey)) {
+            $viteReverbAppKey = Resolve-EnvValue -EnvData $envData -Value $envData['REVERB_APP_KEY']
+        }
+        if ([string]::IsNullOrWhiteSpace($viteReverbHost))   { $viteReverbHost = 'localhost' }
+        if ([string]::IsNullOrWhiteSpace($viteReverbPort))   { $viteReverbPort = if ($targetStage -eq 'production') { '443' } else { '8082' } }
+        if ([string]::IsNullOrWhiteSpace($viteReverbScheme)) { $viteReverbScheme = if ($targetStage -eq 'production') { 'https' } else { 'http' } }
+
+        $appKeyPreview = if ($viteReverbAppKey) { $viteReverbAppKey.Substring(0, [Math]::Min(8, $viteReverbAppKey.Length)) + '...' } else { '(KOSONG!)' }
+        Write-Host "  --- VITE Reverb (di-bake ke bundle JS) ---" -ForegroundColor DarkCyan
+        Write-Host "  VITE_REVERB_HOST    : $viteReverbHost"
+        Write-Host "  VITE_REVERB_PORT    : $viteReverbPort"
+        Write-Host "  VITE_REVERB_SCHEME  : $viteReverbScheme"
+        Write-Host "  VITE_REVERB_APP_KEY : $appKeyPreview"
+        Write-Host ""
+        if ([string]::IsNullOrWhiteSpace($viteReverbAppKey)) {
+            Write-Warn "VITE_REVERB_APP_KEY kosong (di .env & parameter) -- Echo/Reverb akan gagal connect di production!"
+        }
+        if ($targetStage -eq 'production' -and ($viteReverbHost -eq 'localhost' -or $viteReverbScheme -ne 'https')) {
+            Write-Warn "Nilai VITE Reverb masih lokal (host=$viteReverbHost, scheme=$viteReverbScheme). Isi -ViteReverbHost <domain> -ViteReverbPort 443 -ViteReverbScheme https, atau set VITE_REVERB_* di .env."
+        }
+
+        # Secret file untuk VITE_REVERB_APP_KEY (BuildKit secret, pola build-push.ps1)
+        $viteSecretFile = $null
+        if (-not [string]::IsNullOrWhiteSpace($viteReverbAppKey)) {
+            $viteSecretFile = [System.IO.Path]::GetTempFileName()
+            Set-Content -Path $viteSecretFile -Value $viteReverbAppKey -NoNewline -Encoding ascii
+        }
+
+        try {
+            if ($PSCmdlet.ShouldProcess($fullImageName, "docker build --target $targetStage")) {
+                $buildArgs = @(
+                    'build',
+                    '--progress', 'plain',
+                    '--target', $targetStage,
+                    '-t', $fullImageName,
+                    '-t', $latestAlias,
+                    '--build-arg', "VITE_REVERB_HOST=$viteReverbHost",
+                    '--build-arg', "VITE_REVERB_PORT=$viteReverbPort",
+                    '--build-arg', "VITE_REVERB_SCHEME=$viteReverbScheme"
+                )
+                if ($viteSecretFile) {
+                    # Butuh BuildKit agar --secret + RUN --mount=type=secret di Dockerfile berfungsi.
+                    $env:DOCKER_BUILDKIT = '1'
+                    $buildArgs += @('--secret', "id=vite_reverb_app_key,src=$viteSecretFile")
+                }
+                $buildArgs += '.'
+
+                Write-Warn "Docker build: compile ext-grpc dari source bisa MEMAKAN WAKTU LAMA (~20-60 menit). Timeout=${TimeoutSeconds}s. Ini NORMAL, bukan hang."
+                Write-Host "  [INFO] Output docker build akan di-stream LIVE ke terminal di bawah ini (lihat progress compile ext-grpc)." -ForegroundColor DarkGray
+                Write-Host ""
+                $buildStart = Get-Date
+                Invoke-StreamingCommand -Command 'docker' -Arguments $buildArgs -WorkingDirectory $PROJECT_ROOT -TimeoutSec $TimeoutSeconds
+                $buildDur = (Get-Date) - $buildStart
+                Write-Success "Docker image built: $fullImageName (+ $latestAlias) [selesai dalam $($buildDur.ToString('hh\:mm\:ss'))]"
+            }
+        } finally {
+            if ($viteSecretFile -and (Test-Path $viteSecretFile)) {
+                Remove-Item $viteSecretFile -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 

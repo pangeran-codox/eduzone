@@ -9,7 +9,26 @@ COPY package.json package-lock.json* ./
 RUN npm ci --frozen-lockfile
 
 COPY . .
-RUN npm run build
+
+# ── VITE Reverb: nilai di-bake ke bundle JS saat `npm run build` ──────
+# Diisi oleh build.ps1 via --build-arg. Nilai ini HARUS menunjuk endpoint
+# WebSocket yang diakses BROWSER (domain publik, di-proxy nginx lewat
+# location /app) — BUKAN nama service internal Swarm.
+ARG VITE_REVERB_HOST=localhost
+ARG VITE_REVERB_PORT=443
+ARG VITE_REVERB_SCHEME=https
+
+# VITE_REVERB_APP_KEY dikirim lewat BuildKit secret (pola sama build-push.ps1)
+# supaya tidak muncul di `docker history`. `required=false` → aman untuk build
+# dev tanpa secret (fallback ke string kosong, tidak menggagalkan build).
+# Catatan: script build (build.ps1 / docker compose) harus mengaktifkan BuildKit
+# (DOCKER_BUILDKIT=1) agar mount secret ini berfungsi.
+RUN --mount=type=secret,id=vite_reverb_app_key,required=false \
+    VITE_REVERB_HOST="$VITE_REVERB_HOST" \
+    VITE_REVERB_PORT="$VITE_REVERB_PORT" \
+    VITE_REVERB_SCHEME="$VITE_REVERB_SCHEME" \
+    VITE_REVERB_APP_KEY="$(cat /run/secrets/vite_reverb_app_key 2>/dev/null || echo '')" \
+    npm run build
 
 # ================================
 # Stage 2: PHP - Base

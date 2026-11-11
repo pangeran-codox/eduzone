@@ -73,6 +73,30 @@ ABSENSI_SYNC_TOKEN=<random PANJANG BEDA dari JWT di atas>
 ENCRYPTION_SERVICE_API_KEY=<token dari Rust encryption service>
 ```
 
+### 1.3 Nilai VITE Reverb (di-bake ke bundle JS saat build)
+
+`resources/js/echo.js` membaca `import.meta.env.VITE_REVERB_*`, dan **Vite meng-inline nilai itu ke bundle JS saat `npm run build`** — bukan dibaca saat runtime. Artinya nilai ini ditentukan **saat build image**, dan harus menunjuk endpoint WebSocket yang bisa diakses **browser** (domain publik, di-proxy nginx lewat `location /app`), **bukan** nama service internal Swarm seperti `eduzone_reverb`.
+
+`build.ps1` meneruskan nilai ini ke `docker build` sebagai `--build-arg` (plus `VITE_REVERB_APP_KEY` via BuildKit secret). Prioritas: **parameter CLI → `.env`**.
+
+```env
+# Harus domain publik yang diakses browser (BUKAN eduzone_reverb)
+VITE_REVERB_HOST=eduzone.example.com
+VITE_REVERB_PORT=443
+VITE_REVERB_SCHEME=https
+# Boleh dibiarkan placeholder; akan di-resolve otomatis ke REVERB_APP_KEY dari .env
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
+```
+
+Atau lewat parameter (tanpa mengubah `.env`):
+
+```powershell
+.\build.ps1 -Release -DockerHub maikel -Bump Patch `
+    -ViteReverbHost eduzone.example.com -ViteReverbPort 443 -ViteReverbScheme https
+```
+
+> Kalau `VITE_REVERB_HOST` masih `localhost` atau scheme bukan `https`, script menampilkan `[WARN]` — WebSocket akan gagal connect dari browser di production.
+
 ---
 
 ## 2. Ringkasan Alur Kerja (Agar Tidak Bingung)
@@ -107,7 +131,7 @@ ENCRYPTION_SERVICE_API_KEY=<token dari Rust encryption service>
         │
         ▼
   [7] Docker build --target production
-       ├─ Stage 1: node-builder (npm build assets)
+       ├─ Stage 1: node-builder (npm build + bake VITE_REVERB_* → bundle JS)
        ├─ Stage 2: base PHP 8.3 + ext-grpc/protobuf/redis
        └─ Stage 4: production (composer --no-dev + artisan cache)
         │
@@ -327,7 +351,7 @@ Kemudian pilih **Y** pada prompt konfirmasi di script.
 ---
 
 ### ❌ 10.2 "ext-grpc build sangat LAMA (1 jam+) — apakah hang?"
-**TIDAK HANG.** Stage `production` di [Dockerfile](file:///c:/laragon/www/eduzone/Dockerfile#L57-L60) menjalankan:
+**TIDAK HANG.** Stage `production` di [Dockerfile](file:///c:/laragon/www/eduzone/Dockerfile#L76-L79) menjalankan:
 ```
 pecl install redis grpc protobuf
 ```
@@ -366,11 +390,30 @@ Pengecekan:
 ---
 
 ### ❌ 10.5 "Composer install: 'zlib' not found" (saat docker build)
-Periksa `apk add zlib-dev` — ini SUDAH ada di [Dockerfile line 57](file:///c:/laragon/www/eduzone/Dockerfile#L57). Kalau error:
+Periksa `apk add zlib-dev` — ini SUDAH ada di [Dockerfile line 76](file:///c:/laragon/www/eduzone/Dockerfile#L76). Kalau error:
 ```powershell
 .\build.ps1 -Clean -Release -DockerHub maikel -Tag v1.x.x -Force
 ```
 Flag `-Clean` menghapus `vendor/` dan build tanpa intermediate cache yang corrupt.
+
+---
+
+### ❌ 10.6 WebSocket (Echo/Reverb) gagal connect di production
+
+Gejala: console browser error seperti `WebSocket connection to 'ws://localhost:8082/...' failed`, atau Echo tidak menerima event.
+
+Penyebab: nilai `VITE_REVERB_*` ter-bake `localhost`/`http` ke bundle JS **saat build**. Cek blok ringkasan **VITE Reverb** yang dicetak script sebelum `docker build`.
+
+Solusi:
+
+```powershell
+# Build ulang dengan nilai production yang benar:
+.\build.ps1 -Release -DockerHub maikel -Tag vX.Y.Z `
+    -ViteReverbHost <domain-production> -ViteReverbPort 443 -ViteReverbScheme https
+# atau set VITE_REVERB_HOST/PORT/SCHEME di .env lalu build biasa.
+```
+
+> Karena nilai ini di-inline saat `npm run build`, **mengubah env container / docker-compose saja TIDAK cukup** — image harus di-build ulang.
 
 ---
 
@@ -395,10 +438,13 @@ Semua parameter bisa dikombinasikan. Jalankan `Get-Help .\build.ps1 -Full` untuk
 | `-Registry` | `string` | (empty) | Prefix registry: `ghcr.io/acme`, `registry.acme.id/eduzone`, `docker.io/maikel`. |
 | `-DockerHub` | `string` | (empty) | **Shortcut Docker Hub**. Isi username saja, auto-set `-Registry docker.io/<user>`. |
 | `-Push` | `[switch]` | off | Push image ke registry (butuh `-DockerHub` atau `-Registry`). |
+| `-ViteReverbHost` | `string` | `.env` (`VITE_REVERB_HOST`) | Host/domain WebSocket (Reverb) yang diakses **browser**, di-bake ke bundle JS saat build. Jangan pakai nama service internal Swarm. |
+| `-ViteReverbPort` | `string` | `.env` / `443` | Port WebSocket browser (production: 443). |
+| `-ViteReverbScheme` | `string` | `.env` / `https` | Skema WebSocket browser: `https` (wss) atau `http` (ws). |
 | `-Release` | `[switch]` | off | **Shortcut ONE COMMAND**: auto set Mode=Production + DockerBuild=True + Push=True. |
 | `-Bump` | `Major` \| `Minor` \| `Patch` \| `None` | `None` (prompt) | Auto increment tag versi dari git tag terakhir. Non-interaktif. |
 | `-Force` | `[switch]` | off | Skip SEMUA konfirmasi interaktif. HANYA untuk CI/CD. |
-| `-TimeoutSeconds` | `int` | `1800` (30 menit) | Timeout per command (naikkan ke 3600–7200 di CI runner lambat). |
+| `-TimeoutSeconds` | `int` | `5400` (90 menit) | Timeout per command (naikkan ke 7200+ di CI runner lambat). |
 
 ---
 
