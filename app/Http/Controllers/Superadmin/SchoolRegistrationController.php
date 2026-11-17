@@ -75,7 +75,7 @@ class SchoolRegistrationController extends Controller
                 ->exists());
 
         $emailTaken = User::query()
-            ->where('email', $registration->applicant_email)
+            ->whereRaw('lower(email) = ?', [mb_strtolower($registration->applicant_email)])
             ->when($registration->user_id, fn ($q) => $q->where('id', '!=', $registration->user_id))
             ->exists();
 

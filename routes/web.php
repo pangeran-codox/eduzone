@@ -26,7 +26,7 @@ Route::prefix('daftar-sekolah')
  
         Route::get('/verifikasi/{registration}/{token}', [SchoolRegistrationController::class, 'verify'])
             ->whereUuid('registration')
-            ->middleware('throttle:20,1')
+            ->middleware(['throttle:20,1', \App\Http\Middleware\NoReferrerNoStore::class])
             ->name('verify');
     });
 
@@ -35,12 +35,12 @@ Route::prefix('daftar-sekolah')
     ->group(function () {
         Route::get('/{registration}/{token}', [PasswordSetupController::class, 'show'])
             ->whereUuid('registration')
-            ->middleware('throttle:20,1')
+            ->middleware(['throttle:20,1', \App\Http\Middleware\NoReferrerNoStore::class])
             ->name('show');
  
         Route::post('/{registration}/{token}', [PasswordSetupController::class, 'store'])
             ->whereUuid('registration')
-            ->middleware('throttle:10,1')
+            ->middleware(['throttle:10,1', \App\Http\Middleware\NoReferrerNoStore::class])
             ->name('store');
     });
 

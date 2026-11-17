@@ -63,7 +63,7 @@ class SchoolRegistrationService
                 throw new DomainException('NPSN ini sudah dipakai sekolah lain. Periksa data sekolah sebelum menyetujui.');
             }
 
-            if (User::query()->where('email', $locked->applicant_email)->exists()) {
+            if (User::query()->whereRaw('lower(email) = ?', [mb_strtolower($locked->applicant_email)])->exists()) {
                 throw new DomainException('Email pendaftar sudah dipakai akun lain. Tolak pendaftaran ini dan minta pendaftar mendaftar ulang dengan email berbeda.');
             }
 

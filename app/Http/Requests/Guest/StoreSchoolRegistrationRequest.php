@@ -4,6 +4,7 @@ namespace App\Http\Requests\Guest;
 
 use App\Http\Controllers\Superadmin\SchoolController;
 use App\Models\SchoolRegistration;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -60,7 +61,17 @@ class StoreSchoolRegistrationRequest extends FormRequest
                 Rule::unique('school_registrations', 'applicant_email')->whereIn('status', $active),
                 // LoginController mencoba email dulu dan hanya memeriksa user PERTAMA dengan email itu,
                 // sedangkan users.email tidak terbukti unik: hindari tabrakan dengan akun yang sudah ada.
-                Rule::unique('users', 'email'),
+                // Dibandingkan tanpa memedulikan huruf besar-kecil (email form sudah di-lowercase,
+                // tetapi users.email bisa tersimpan dengan huruf besar).
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $taken = User::query()
+                        ->whereRaw('lower(email) = ?', [mb_strtolower((string) $value)])
+                        ->exists();
+
+                    if ($taken) {
+                        $fail('Email ini sudah terdaftar atau sedang dalam proses pendaftaran. Gunakan email lain.');
+                    }
+                },
             ],
             'applicant_phone' => ['nullable', 'string', 'max:30'],
             'applicant_position' => ['nullable', 'string', 'max:100'],

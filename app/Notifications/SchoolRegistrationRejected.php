@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\MailText;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -30,9 +31,9 @@ class SchoolRegistrationRejected extends Notification implements ShouldQueue, No
     {
         return (new MailMessage)
             ->subject('Pendaftaran sekolah belum dapat disetujui')
-            ->greeting("Halo, {$this->applicantName}.")
-            ->line("Pendaftaran {$this->schoolName} di EduZone belum dapat kami setujui.")
-            ->line("Alasan: {$this->reason}")
+            ->greeting('Halo, ' . MailText::plain($this->applicantName) . '.')
+            ->line('Pendaftaran ' . MailText::plain($this->schoolName) . ' di EduZone belum dapat kami setujui.')
+            ->line('Alasan: ' . MailText::plain($this->reason))
             ->line('Jika ada pertanyaan, hubungi tim EduZone.');
     }
 }

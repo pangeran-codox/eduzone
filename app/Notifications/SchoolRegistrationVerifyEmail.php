@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\MailText;
 use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -37,8 +38,8 @@ class SchoolRegistrationVerifyEmail extends Notification implements ShouldQueue,
     {
         return (new MailMessage)
             ->subject('Verifikasi Pendaftaran Sekolah di EduZone')
-            ->greeting("Halo, {$this->applicantName}!")
-            ->line("Terima kasih telah mendaftarkan {$this->schoolName} di EduZone.")
+            ->greeting('Halo, ' . MailText::plain($this->applicantName) . '!')
+            ->line('Terima kasih telah mendaftarkan ' . MailText::plain($this->schoolName) . ' di EduZone.')
             ->line('Klik tombol di bawah untuk memverifikasi alamat email Anda. Setelah itu, pendaftaran akan ditinjau oleh tim kami.')
             ->action('Verifikasi Email', $this->verifyUrl)
             ->line('Tautan berlaku sampai ' . $this->expiresAt->timezone(config('app.timezone'))->translatedFormat('d F Y H:i') . '.')

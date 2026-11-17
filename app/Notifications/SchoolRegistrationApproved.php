@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\MailText;
 use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -37,16 +38,18 @@ class SchoolRegistrationApproved extends Notification implements ShouldQueue, No
 
     public function toMail(object $notifiable): MailMessage
     {
+        $school = MailText::plain($this->schoolName);
+
         $mail = (new MailMessage)
             ->subject($this->resend
                 ? 'Tautan baru untuk membuat kata sandi EduZone'
                 : 'Pendaftaran sekolah Anda disetujui')
-            ->greeting("Halo, {$this->applicantName}!");
+            ->greeting('Halo, ' . MailText::plain($this->applicantName) . '!');
 
         if (! $this->resend) {
-            $mail->line("Pendaftaran {$this->schoolName} di EduZone sudah disetujui. Akun Tata Usaha Anda sudah dibuat.");
+            $mail->line("Pendaftaran {$school} di EduZone sudah disetujui. Akun Tata Usaha Anda sudah dibuat.");
         } else {
-            $mail->line("Berikut tautan baru untuk membuat kata sandi akun Tata Usaha {$this->schoolName}. Tautan sebelumnya tidak berlaku lagi.");
+            $mail->line("Berikut tautan baru untuk membuat kata sandi akun Tata Usaha {$school}. Tautan sebelumnya tidak berlaku lagi.");
         }
 
         return $mail

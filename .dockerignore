@@ -12,3 +12,4 @@ vendor
 .env.*
 !.env.example
 *.bak
+*.zip
