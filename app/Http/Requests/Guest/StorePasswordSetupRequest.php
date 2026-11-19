@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Guest;
 
+use App\Rules\StrongPassword;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rules\Password;
 
 class StorePasswordSetupRequest extends FormRequest
 {
@@ -15,13 +15,15 @@ class StorePasswordSetupRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'password' => ['required', 'confirmed', Password::defaults()],
+            // bail: tampilkan satu pesan saja, dimulai dari yang paling mendasar.
+            'password' => ['bail', 'required', new StrongPassword, 'confirmed'],
         ];
     }
 
     public function messages(): array
     {
         return [
+            'password.required' => 'Kata sandi wajib diisi.',
             'password.confirmed' => 'Konfirmasi kata sandi tidak sama.',
         ];
     }

@@ -42,7 +42,7 @@ class SchoolRegistrationVerifyEmail extends Notification implements ShouldQueue,
             ->line('Terima kasih telah mendaftarkan ' . MailText::plain($this->schoolName) . ' di EduZone.')
             ->line('Klik tombol di bawah untuk memverifikasi alamat email Anda. Setelah itu, pendaftaran akan ditinjau oleh tim kami.')
             ->action('Verifikasi Email', $this->verifyUrl)
-            ->line('Tautan berlaku sampai ' . $this->expiresAt->timezone(config('app.timezone'))->translatedFormat('d F Y H:i') . '.')
+            ->line('Tautan berlaku sampai ' . $this->expiresAt->timezone('Asia/Jakarta')->translatedFormat('d F Y H:i') . ' WIB.')
             ->line('Jika Anda tidak merasa mendaftar, abaikan email ini.');
     }
 }

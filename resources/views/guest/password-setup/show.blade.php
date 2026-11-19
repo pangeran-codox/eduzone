@@ -55,7 +55,7 @@
             @csrf
 
             <x-guest.field name="password" label="Kata sandi baru" type="password" required
-                           autocomplete="new-password" hint="Minimal 8 karakter." />
+                           autocomplete="new-password" hint="Minimal 10 karakter, kombinasi huruf dan angka." />
             <x-guest.field name="password_confirmation" label="Ulangi kata sandi" type="password" required
                            autocomplete="new-password" />
 

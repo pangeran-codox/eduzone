@@ -63,6 +63,15 @@ return Application::configure(basePath: dirname(__DIR__))
             ]);
         })
         ->withExceptions(function (Exceptions $exceptions) {
+            // Form set password yang dibuka terlalu lama (sesi/CSRF habis): kembali ke form dengan pesan ramah,
+            // bukan halaman 419 polos. Hanya untuk halaman ini; route lain tetap memakai penanganan bawaan.
+            $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\HttpException $e, \Illuminate\Http\Request $request) {
+                if ($e->getStatusCode() === 419 && $request->is('atur-kata-sandi/*')) {
+                    return redirect($request->url())->withErrors([
+                        'password' => 'Halaman sudah kedaluwarsa karena terlalu lama terbuka. Silakan isi ulang kata sandi Anda.',
+                    ]);
+                }
+            });
             $exceptions->render(function (\Spatie\Multitenancy\Exceptions\NoCurrentTenant $e, \Illuminate\Http\Request $request) {
                 auth()->logout();
                 $request->session()->invalidate();

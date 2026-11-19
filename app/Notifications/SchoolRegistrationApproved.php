@@ -56,7 +56,7 @@ class SchoolRegistrationApproved extends Notification implements ShouldQueue, No
             ->line("Username Anda: {$this->username}")
             ->line('Klik tombol di bawah untuk membuat kata sandi, lalu Anda bisa masuk.')
             ->action('Buat kata sandi', $this->setPasswordUrl)
-            ->line('Tautan berlaku sampai ' . $this->expiresAt->timezone(config('app.timezone'))->translatedFormat('d F Y H:i') . '.')
+            ->line('Tautan berlaku sampai ' . $this->expiresAt->timezone('Asia/Jakarta')->translatedFormat('d F Y H:i') . ' WIB.')
             ->line("Setelah itu, masuk di {$this->loginUrl}.");
     }
 }
